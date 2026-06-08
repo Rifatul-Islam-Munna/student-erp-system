@@ -1,0 +1,172 @@
+import Joi from 'joi';
+
+const educationObj = Joi.object({
+    educationKey: Joi.string().allow(null, ''),
+    degreeExam: Joi.string().allow(null, ''),
+    level: Joi.string().allow(null, ''),
+    institutionName: Joi.string().allow(null, ''),
+    institution: Joi.string().allow(null, ''),
+    passingYear: Joi.alternatives().try(Joi.string(), Joi.number()).allow(null, ''),
+    year: Joi.alternatives().try(Joi.string(), Joi.number()).allow(null, ''),
+    board: Joi.string().allow(null, ''),
+    gpa: Joi.alternatives().try(Joi.string(), Joi.number()).allow(null, ''),
+    groupSubject: Joi.string().allow(null, ''),
+    group: Joi.string().allow(null, ''),
+    durationMonths: Joi.alternatives().try(Joi.string(), Joi.number()).allow(null, ''),
+    expectedScheduleYear: Joi.alternatives().try(Joi.string(), Joi.number()).allow(null, ''),
+    expectedScheduleMonths: Joi.alternatives().try(Joi.string(), Joi.number()).allow(null, ''),
+    examConductedYear: Joi.alternatives().try(Joi.string(), Joi.number()).allow(null, ''),
+    examConductedMonths: Joi.alternatives().try(Joi.string(), Joi.number()).allow(null, ''),
+    courseName: Joi.string().allow(null, ''),
+    subjectName: Joi.string().allow(null, ''),
+    courseUnderInstitution: Joi.string().allow(null, ''),
+    institutionBoard: Joi.string().allow(null, ''),
+    institutionCollege: Joi.string().allow(null, ''),
+    institutionUniversity: Joi.string().allow(null, ''),
+    institutionNationalUniversity: Joi.string().allow(null, ''),
+    institutionPrivateUniversity: Joi.string().allow(null, ''),
+    institutionDhakaUniversity: Joi.string().allow(null, ''),
+    completionYear: Joi.alternatives().try(Joi.string(), Joi.number()).allow(null, ''),
+    completionMonth: Joi.alternatives().try(Joi.string(), Joi.number()).allow(null, ''),
+    address: Joi.string().allow(null, ''),
+    entranceDate: Joi.date().iso().allow(null, ''),
+    graduationDate: Joi.date().iso().allow(null, '')
+});
+
+const employmentObj = Joi.object({
+    companyName: Joi.string().allow(null, ''),
+    address: Joi.string().allow(null, ''),
+    jobTitle: Joi.string().allow(null, ''),
+    position: Joi.string().allow(null, ''),
+    startDate: Joi.date().iso().allow(null, ''),
+    endDate: Joi.date().iso().allow(null, '')
+});
+
+const languageEducationObj = Joi.object({
+    languageKey: Joi.string().allow(null, ''),
+    instituteName: Joi.string().allow(null, ''),
+    preferredInstituteName: Joi.string().allow(null, ''),
+    address: Joi.string().allow(null, ''),
+    fromDate: Joi.date().iso().allow(null, ''),
+    toDate: Joi.date().iso().allow(null, ''),
+    totalHours: Joi.alternatives().try(Joi.string(), Joi.number()).allow(null, ''),
+    durationMonths: Joi.alternatives().try(Joi.string(), Joi.number()).allow(null, ''),
+    attendancePercentage: Joi.alternatives().try(Joi.string(), Joi.number()).allow(null, ''),
+    grade: Joi.string().allow(null, '')
+});
+
+const languageTestObj = Joi.object({
+    examType: Joi.string().allow(null, ''),
+    level: Joi.string().allow(null, ''),
+    examDate: Joi.date().iso().allow(null, ''),
+    score: Joi.string().allow(null, ''),
+    result: Joi.string().valid('Pass', 'Fail', 'Pending', '').allow(null, '')
+});
+
+export const studentBaseSchema = {
+    fullNameEn: Joi.string().required(),
+    nameKatakana: Joi.string().allow(null, ''),
+    name_bd: Joi.string().allow(null, ''),
+    phone: Joi.string().required(),
+    whatsapp: Joi.string().allow(null, ''),
+    lineapp: Joi.string().allow(null, ''),
+    facebookprofile: Joi.string().allow(null, ''),
+    guardianPhone: Joi.string().allow(null, ''),
+    email: Joi.string().email().required(),
+    dob: Joi.date().iso().required(),
+    gender: Joi.string().valid('male', 'female', 'other').required(),
+    maritalStatus: Joi.string().valid('single', 'married', 'divorced', 'widowed', '').allow(null, ''),
+    nationality: Joi.string().allow(null, ''),
+    birth_place: Joi.string().allow(null, ''),
+    bloodGroup: Joi.string().allow(null, ''),
+    nationalId: Joi.string().allow(null, ''),
+    passportNo: Joi.string().allow(null, ''),
+    passportIssueDate: Joi.date().iso().allow(null, ''),
+    passportExpiryDate: Joi.date().iso().allow(null, ''),
+    bc_date_of_registration: Joi.date().iso().allow(null, ''),
+    bc_date_of_issuance: Joi.date().iso().allow(null, ''),
+    occupation: Joi.string().allow(null, ''),
+    spouseName: Joi.string().allow(null, ''),
+    father_name_en: Joi.string().allow(null, ''),
+    mother_name_en: Joi.string().allow(null, ''),
+    sponsor_name_en: Joi.string().allow(null, ''),
+    sponsor_relationship: Joi.string().allow(null, ''),
+    emergencyContact: Joi.string().allow(null, ''),
+    emergencyPhone: Joi.string().allow(null, ''),
+    permanentAddress: Joi.string().allow(null, ''),
+    currentAddressSameAsPermanent: Joi.boolean().default(false),
+    currentAddress: Joi.string().allow(null, ''),
+
+    education: Joi.array().items(educationObj).default([]),
+    employment: Joi.array().items(employmentObj).default([]),
+    languageEducation: Joi.array().items(languageEducationObj).default([]),
+    languageTest: Joi.array().items(languageTestObj).default([]),
+
+    visaType: Joi.string().allow(null, ''),
+    country: Joi.string().allow(null, ''),
+    schoolName: Joi.string().allow(null, ''),
+    intake: Joi.string().allow(null, ''),
+    expectedIntake: Joi.string().allow(null, ''),
+    agent: Joi.string().allow(null, ''),
+    partnerAgency: Joi.string().allow(null, ''),
+    counselor: Joi.string().allow(null, ''),
+    source: Joi.string().allow(null, ''),
+    status: Joi.string().allow(null, ''),
+    applicationType: Joi.string().allow(null, ''),
+    studentType: Joi.string().allow(null, ''),
+    branch: Joi.string().allow(null, ''),
+
+    edu_ssc_school: Joi.string().allow(null, ''),
+    edu_ssc_board: Joi.string().allow(null, ''),
+    edu_ssc_subject: Joi.string().allow(null, ''),
+    edu_ssc_year: Joi.alternatives().try(Joi.string(), Joi.number()).allow(null, ''),
+    edu_ssc_months: Joi.alternatives().try(Joi.string(), Joi.number()).allow(null, ''),
+    edu_hsc_school: Joi.string().allow(null, ''),
+    edu_hsc_board: Joi.string().allow(null, ''),
+    edu_hsc_subject: Joi.string().allow(null, ''),
+    edu_hsc_year: Joi.alternatives().try(Joi.string(), Joi.number()).allow(null, ''),
+    edu_hsc_months: Joi.alternatives().try(Joi.string(), Joi.number()).allow(null, ''),
+    edu_hsc_expected_schedule_year: Joi.alternatives().try(Joi.string(), Joi.number()).allow(null, ''),
+    edu_hsc_expected_schedule_months: Joi.alternatives().try(Joi.string(), Joi.number()).allow(null, ''),
+    edu_hsc_exam_conducted_year: Joi.alternatives().try(Joi.string(), Joi.number()).allow(null, ''),
+    edu_hsc_exam_conducted_months: Joi.alternatives().try(Joi.string(), Joi.number()).allow(null, ''),
+    edu_bachelor_degree_subject: Joi.string().allow(null, ''),
+    jp_study_institution: Joi.string().allow(null, ''),
+    jp_study_institution_preferred: Joi.string().allow(null, ''),
+    jp_study_hours: Joi.alternatives().try(Joi.string(), Joi.number()).allow(null, ''),
+    jp_study_months: Joi.alternatives().try(Joi.string(), Joi.number()).allow(null, ''),
+    name_course: Joi.string().allow(null, ''),
+    name_subject: Joi.string().allow(null, ''),
+    course_completion_year: Joi.alternatives().try(Joi.string(), Joi.number()).allow(null, ''),
+    course_completion_month: Joi.alternatives().try(Joi.string(), Joi.number()).allow(null, ''),
+    course_under_institution: Joi.string().allow(null, ''),
+    institution_board: Joi.string().allow(null, ''),
+    institution_college: Joi.string().allow(null, ''),
+    institution_university: Joi.string().allow(null, ''),
+    institution_national_university: Joi.string().allow(null, ''),
+    institution_private_university: Joi.string().allow(null, ''),
+    institution_dhaka_university: Joi.string().allow(null, ''),
+    docVariables: Joi.object().pattern(Joi.string(), Joi.alternatives().try(Joi.string(), Joi.number(), Joi.boolean(), Joi.allow(null))).default({}),
+    explanationChecks: Joi.object().pattern(Joi.string(), Joi.boolean()).default({}),
+
+    googleDriveLink: Joi.string().uri().allow(null, ''),
+    internalNotes: Joi.string().allow(null, '')
+};
+
+export const createStudentSchema = Joi.object(studentBaseSchema);
+
+export const updateStudentSchema = Joi.object(studentBaseSchema).fork(
+    Object.keys(studentBaseSchema),
+    (schema) => schema.optional()
+);
+
+export const queryStudentSchema = Joi.object({
+    page: Joi.number().min(1).default(1),
+    limit: Joi.number().min(1).max(100).default(10),
+    startDate: Joi.date().iso().optional(),
+    endDate: Joi.date().iso().optional(),
+    branch: Joi.string().optional(),
+    counselor: Joi.string().optional(),
+    partnerAgency: Joi.string().optional(),
+    search: Joi.string().optional()
+});
