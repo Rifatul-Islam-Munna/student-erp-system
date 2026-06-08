@@ -4,6 +4,7 @@ export const documentTemplateResponseSchema = {
         _id: { type: 'string' },
         name: { type: 'string' },
         docType: { type: 'string' },
+        status: { type: 'string' },
         fileType: { type: 'string' },
         originalFilePath: { type: 'string' },
         originalFileName: { type: 'string' },
@@ -11,6 +12,19 @@ export const documentTemplateResponseSchema = {
         shortcodes: { type: 'array', items: { type: 'string' } },
         description: { type: 'string' },
         isActive: { type: 'boolean' },
+        pageSettings: {
+            type: 'object',
+            properties: {
+                preset: { type: 'string' },
+                orientation: { type: 'string' },
+                widthMm: { type: 'number' },
+                heightMm: { type: 'number' },
+                marginTopMm: { type: 'number' },
+                marginRightMm: { type: 'number' },
+                marginBottomMm: { type: 'number' },
+                marginLeftMm: { type: 'number' }
+            }
+        },
         createdAt: { type: 'string', format: 'date-time' },
         updatedAt: { type: 'string', format: 'date-time' }
     },
@@ -28,6 +42,7 @@ export const getAllDocumentTemplatesSwagger = {
             limit: { type: 'number' },
             search: { type: 'string' },
             docType: { type: 'string' },
+            status: { type: 'string' },
             isActive: { type: 'boolean' }
         }
     },
@@ -70,11 +85,11 @@ export const createDocumentTemplateSwagger = {
 
 export const generateDocumentSwagger = {
     tags: ['Documents'],
-    description: 'Generate a PDF from a template for a specific student. Returns a temporary download link.',
+    description: 'Generate a printable HTML document from a template. Returns temporary download link.',
     security: [{ bearerAuth: [] }],
     body: {
         type: 'object',
-        required: ['templateId', 'studentId'],
+        required: ['templateId'],
         properties: {
             templateId: { type: 'string' },
             studentId: { type: 'string' }
@@ -87,7 +102,8 @@ export const generateDocumentSwagger = {
                 success: { type: 'boolean' },
                 message: { type: 'string' },
                 downloadUrl: { type: 'string' },
-                expiresAt: { type: 'string', format: 'date-time' }
+                expiresAt: { type: 'string', format: 'date-time' },
+                renderedHtml: { type: 'string' }
             }
         }
     }

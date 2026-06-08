@@ -22,7 +22,7 @@ export default async function documentRoutes(fastify, options) {
 
         protectedRoutes.addHook('onRoute', (routeOptions) => {
             routeOptions.schema = routeOptions.schema || {};
-            routeOptions.schema.tags = routeOptions.schema.tags || ['Students'];
+            routeOptions.schema.tags = routeOptions.schema.tags || ['Documents'];
         });
 
 

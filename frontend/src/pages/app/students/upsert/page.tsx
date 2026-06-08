@@ -535,7 +535,6 @@ export default function StudentUpsert() {
     formik.setFieldValue("languageTest", items);
   };
 
-  const docSections = Array.from(new Set(STUDENT_DOC_VARIABLES.map(getDocVariableSection)));
   const managedDocVariableKeys = new Set(Object.keys(derivedDocVariables).filter((key) => derivedDocVariables[key] !== undefined));
   const extraDocVariables = STUDENT_DOC_VARIABLES.filter(
     (variable) =>
@@ -543,6 +542,106 @@ export default function StudentUpsert() {
       !DUPLICATE_DOC_VARIABLE_PATTERNS.some((pattern) => variable.includes(pattern))
   );
   const activeExplanationConfigs = EXPLANATION_CONFIGS.filter((config) => formik.values.explanationChecks?.[config.id]);
+  const renderDocVariableField = (variable: string, mode: "auto" | "plain" = "auto") => {
+    const value = formik.values.docVariables?.[variable] || "";
+
+    if (mode === "auto" && isLikelyDateVariable(variable)) {
+      return (
+        <DatePicker
+          label={formatDocVariableLabel(variable)}
+          value={value ? dayjs(value) : null}
+          onChange={(dateValue) =>
+            formik.setFieldValue("docVariables", {
+              ...(formik.values.docVariables || {}),
+              [variable]: dateValue?.format("YYYY-MM-DD") || "",
+            })
+          }
+          slotProps={{ textField: { fullWidth: true } }}
+        />
+      );
+    }
+
+    if (isDatePartVariable(variable)) {
+      return (
+        <TextField
+          fullWidth
+          type="number"
+          label={formatDocVariableLabel(variable)}
+          value={value}
+          onChange={(event) =>
+            formik.setFieldValue("docVariables", {
+              ...(formik.values.docVariables || {}),
+              [variable]: event.target.value,
+            })
+          }
+        />
+      );
+    }
+
+    return (
+      <TextField
+        fullWidth
+        multiline={isLikelyLongTextVariable(variable)}
+        rows={isLikelyLongTextVariable(variable) ? 2 : undefined}
+        label={formatDocVariableLabel(variable)}
+        value={value}
+        onChange={(event) =>
+          formik.setFieldValue("docVariables", {
+            ...(formik.values.docVariables || {}),
+            [variable]: event.target.value,
+          })
+        }
+      />
+    );
+  };
+  const renderExtraSection = (section: string, title?: string) => {
+    const variables = extraDocVariables.filter((variable) => getDocVariableSection(variable) === section);
+    if (variables.length === 0) return null;
+
+    return (
+      <>
+        <SectionLabel>{t(title || `${section} Extra`)}</SectionLabel>
+        {variables.map((variable) => (
+          <Grid key={variable} size={{ xs: 12, md: 6 }}>
+            {renderDocVariableField(variable)}
+          </Grid>
+        ))}
+      </>
+    );
+  };
+  const renderVariableGroup = (title: string, variables: string[], mode: "auto" | "plain" = "auto") => {
+    if (variables.length === 0) return null;
+
+    return (
+      <>
+        <SectionLabel>{t(title)}</SectionLabel>
+        {variables.map((variable) => (
+          <Grid key={variable} size={{ xs: 12, md: 6 }}>
+            {renderDocVariableField(variable, mode)}
+          </Grid>
+        ))}
+      </>
+    );
+  };
+  const educationExtraVariables = extraDocVariables.filter((variable) => getDocVariableSection(variable) === "Education");
+  const japaneseStudyExtraVariables = extraDocVariables.filter((variable) => getDocVariableSection(variable) === "Japanese Study");
+  const sscExtraVariables = educationExtraVariables.filter((variable) => variable.includes("edu_ssc"));
+  const hscExtraVariables = educationExtraVariables.filter((variable) => variable.includes("edu_hsc"));
+  const bachelorExtraVariables = educationExtraVariables.filter(
+    (variable) =>
+      variable.includes("edu_bachelor") ||
+      variable.includes("course_") ||
+      variable.includes("institution_") ||
+      variable.includes("reason of") ||
+      variable.includes("edu_gap") ||
+      variable.includes("adimission")
+  );
+  const otherEducationExtraVariables = educationExtraVariables.filter(
+    (variable) =>
+      !sscExtraVariables.includes(variable) &&
+      !hscExtraVariables.includes(variable) &&
+      !bachelorExtraVariables.includes(variable)
+  );
 
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs}>
@@ -578,7 +677,6 @@ export default function StudentUpsert() {
                 <Tab label={t("Education")} />
                 <Tab label={t("Employment")} />
                 <Tab label={t("Study Info")} />
-                <Tab label={t("Extra Information")} />
                 <Tab label={t("Other")} />
               </Tabs>
             </Box>
@@ -640,6 +738,7 @@ export default function StudentUpsert() {
                   <Grid size={{ xs: 12, md: 4 }}>
                     <TextField fullWidth id="occupation" name="occupation" label={t("Occupation")} value={formik.values.occupation || ""} onChange={formik.handleChange} />
                   </Grid>
+                  {renderExtraSection("Personal")}
                 </Grid>
               )}
 
@@ -757,6 +856,9 @@ export default function StudentUpsert() {
                   <Grid size={{ xs: 12, md: 4 }}>
                     <DatePicker label={t("Birth Certificate Issue Date")} value={formik.values.bc_date_of_issuance ? dayjs(formik.values.bc_date_of_issuance) : null} onChange={(value) => formik.setFieldValue("bc_date_of_issuance", value?.toISOString() || undefined)} slotProps={{ textField: { fullWidth: true } }} />
                   </Grid>
+                  {renderExtraSection("Family")}
+                  {renderExtraSection("Sponsor")}
+                  {renderExtraSection("Identity")}
                 </Grid>
               )}
 
@@ -782,6 +884,7 @@ export default function StudentUpsert() {
                       </Grid>
                     </>
                   )}
+                  {renderVariableGroup("SSC Variables", sscExtraVariables, "plain")}
 
                   <SectionLabel>{t("HSC Information")}</SectionLabel>
                   <Grid size={{ xs: 12, md: 4 }}>
@@ -815,6 +918,7 @@ export default function StudentUpsert() {
                       </Grid>
                     </>
                   )}
+                  {renderVariableGroup("HSC Variables", hscExtraVariables, "plain")}
 
                   <SectionLabel>{t("Bachelor / Degree")}</SectionLabel>
                   <Grid size={{ xs: 12, md: 4 }}>
@@ -857,6 +961,8 @@ export default function StudentUpsert() {
                       </Grid>
                     </>
                   )}
+                  {renderVariableGroup("Bachelor / Degree Variables", bachelorExtraVariables, "plain")}
+                  {renderVariableGroup("Other Education Variables", otherEducationExtraVariables, "plain")}
 
                   <SectionLabel>{t("Japanese Study")}</SectionLabel>
                   <Grid size={{ xs: 12, md: 6 }}>
@@ -875,6 +981,7 @@ export default function StudentUpsert() {
                       </Grid>
                     </>
                   )}
+                  {renderVariableGroup("Japanese Study Variables", japaneseStudyExtraVariables, "plain")}
 
                   {isEdit && (
                     <>
@@ -964,6 +1071,9 @@ export default function StudentUpsert() {
                       </Grid>
                     </Box>
                   ))}
+                  <Grid container spacing={3}>
+                    {renderExtraSection("Work")}
+                  </Grid>
                 </Box>
               )}
 
@@ -1000,215 +1110,77 @@ export default function StudentUpsert() {
                   <Grid size={{ xs: 12, md: 4 }}>
                     <TextField fullWidth id="applicationType" name="applicationType" label={t("Application Type")} value={formik.values.applicationType || ""} onChange={formik.handleChange} />
                   </Grid>
+                  {renderExtraSection("Destination")}
+
+                  {activeExplanationConfigs.length > 0 && (
+                    <Grid size={12}>
+                      <Typography variant="body2" color="textSecondary">
+                        {t("Selected explanations add doc-only inputs below.")}
+                      </Typography>
+                    </Grid>
+                  )}
+
+                  <SectionLabel>{t("Explanations")}</SectionLabel>
+                  {EXPLANATION_CONFIGS.map((config) => {
+                    const isChecked = Boolean(formik.values.explanationChecks?.[config.id]);
+                    const explanationVariables = config.variables.filter(
+                      (variable) => !managedDocVariableKeys.has(variable) || Boolean(formik.values.docVariables?.[variable])
+                    );
+
+                    return (
+                      <Grid key={config.id} size={12}>
+                        <Box className="border border-gray-200 rounded-lg p-4 bg-background-paper">
+                          <FormControlLabel
+                            control={
+                              <Checkbox
+                                checked={isChecked}
+                                onChange={(event) =>
+                                  formik.setFieldValue("explanationChecks", {
+                                    ...(formik.values.explanationChecks || {}),
+                                    [config.id]: event.target.checked,
+                                  })
+                                }
+                              />
+                            }
+                            label={config.label}
+                          />
+
+                          {isChecked && (
+                            <Box className="mt-3">
+                              {explanationVariables.length === 0 ? (
+                                <Typography variant="body2" color="textSecondary" className="ms-9">
+                                  {t("This explanation uses common student fields only. No extra input needed here.")}
+                                </Typography>
+                              ) : (
+                                <Grid container spacing={2}>
+                                  {explanationVariables.map((variable) => (
+                                    <Grid key={`${config.id}-${variable}`} size={{ xs: 12, md: 6 }}>
+                                      {renderDocVariableField(variable)}
+                                    </Grid>
+                                  ))}
+                                </Grid>
+                              )}
+                            </Box>
+                          )}
+                        </Box>
+                      </Grid>
+                    );
+                  })}
+
+                  {isEdit && (
+                    <>
+                      <SectionLabel>{t("Japanese Exam Variables")}</SectionLabel>
+                      {STUDENT_DOC_EXAM_VARIABLES.map((variable) => (
+                        <Grid key={variable} size={{ xs: 12, md: 6 }}>
+                          {renderDocVariableField(variable)}
+                        </Grid>
+                      ))}
+                    </>
+                  )}
                 </Grid>
               )}
 
               {tabValue === 6 && (
-                <Box>
-                  <Typography variant="body2" color="textSecondary" className="mb-4">
-                    {t("Only extra doc variables here. Common info taken once in main tabs and auto-filled everywhere else.")}
-                  </Typography>
-                  {docSections.map((section) => (
-                    <Box key={section} className="mb-6">
-                      <SectionLabel>{t(section)}</SectionLabel>
-                      <Grid container spacing={2} sx={{ mt: 0.5 }}>
-                        {extraDocVariables.filter((variable) => getDocVariableSection(variable) === section).map((variable) => {
-                          const value = formik.values.docVariables?.[variable] || "";
-                          return (
-                            <Grid key={variable} size={{ xs: 12, md: 6 }}>
-                              {isLikelyDateVariable(variable) ? (
-                                <DatePicker
-                                  label={formatDocVariableLabel(variable)}
-                                  value={value ? dayjs(value) : null}
-                                  onChange={(dateValue) =>
-                                    formik.setFieldValue("docVariables", {
-                                      ...(formik.values.docVariables || {}),
-                                      [variable]: dateValue?.format("YYYY-MM-DD") || "",
-                                    })
-                                  }
-                                  slotProps={{ textField: { fullWidth: true } }}
-                                />
-                              ) : isDatePartVariable(variable) ? (
-                                <TextField
-                                  fullWidth
-                                  type="number"
-                                  label={formatDocVariableLabel(variable)}
-                                  value={value}
-                                  onChange={(event) =>
-                                    formik.setFieldValue("docVariables", {
-                                      ...(formik.values.docVariables || {}),
-                                      [variable]: event.target.value,
-                                    })
-                                  }
-                                />
-                              ) : (
-                                <TextField
-                                  fullWidth
-                                  multiline={isLikelyLongTextVariable(variable)}
-                                  rows={isLikelyLongTextVariable(variable) ? 2 : undefined}
-                                  label={formatDocVariableLabel(variable)}
-                                  value={value}
-                                  onChange={(event) =>
-                                    formik.setFieldValue("docVariables", {
-                                      ...(formik.values.docVariables || {}),
-                                      [variable]: event.target.value,
-                                    })
-                                  }
-                                />
-                              )}
-                            </Grid>
-                          );
-                        })}
-                      </Grid>
-
-                      {section === "Japanese Study" && (
-                        <Box className="mt-6">
-                          <SectionLabel>{t("Explanations")}</SectionLabel>
-                          <Box className="space-y-4 mt-2">
-                            {EXPLANATION_CONFIGS.map((config) => {
-                              const isChecked = Boolean(formik.values.explanationChecks?.[config.id]);
-                              const explanationVariables = config.variables.filter(
-                                (variable) => !managedDocVariableKeys.has(variable) || Boolean(formik.values.docVariables?.[variable])
-                              );
-
-                              return (
-                                <Box key={config.id} className="border border-gray-200 rounded-lg p-4 bg-background-paper">
-                                  <FormControlLabel
-                                    control={
-                                      <Checkbox
-                                        checked={isChecked}
-                                        onChange={(event) =>
-                                          formik.setFieldValue("explanationChecks", {
-                                            ...(formik.values.explanationChecks || {}),
-                                            [config.id]: event.target.checked,
-                                          })
-                                        }
-                                      />
-                                    }
-                                    label={config.label}
-                                  />
-
-                                  {isChecked && (
-                                    <Box className="mt-3">
-                                      {explanationVariables.length === 0 ? (
-                                        <Typography variant="body2" color="textSecondary" className="ms-9">
-                                          {t("This explanation uses common student fields only. No extra input needed here.")}
-                                        </Typography>
-                                      ) : (
-                                        <Grid container spacing={2}>
-                                          {explanationVariables.map((variable) => {
-                                            const value = formik.values.docVariables?.[variable] || "";
-                                            return (
-                                              <Grid key={`${config.id}-${variable}`} size={{ xs: 12, md: 6 }}>
-                                                {isLikelyDateVariable(variable) ? (
-                                                  <DatePicker
-                                                    label={formatDocVariableLabel(variable)}
-                                                    value={value ? dayjs(value) : null}
-                                                    onChange={(dateValue) =>
-                                                      formik.setFieldValue("docVariables", {
-                                                        ...(formik.values.docVariables || {}),
-                                                        [variable]: dateValue?.format("YYYY-MM-DD") || "",
-                                                      })
-                                                    }
-                                                    slotProps={{ textField: { fullWidth: true } }}
-                                                  />
-                                                ) : isDatePartVariable(variable) ? (
-                                                  <TextField
-                                                    fullWidth
-                                                    type="number"
-                                                    label={formatDocVariableLabel(variable)}
-                                                    value={value}
-                                                    onChange={(event) =>
-                                                      formik.setFieldValue("docVariables", {
-                                                        ...(formik.values.docVariables || {}),
-                                                        [variable]: event.target.value,
-                                                      })
-                                                    }
-                                                  />
-                                                ) : (
-                                                  <TextField
-                                                    fullWidth
-                                                    multiline={isLikelyLongTextVariable(variable)}
-                                                    rows={isLikelyLongTextVariable(variable) ? 2 : undefined}
-                                                    label={formatDocVariableLabel(variable)}
-                                                    value={value}
-                                                    onChange={(event) =>
-                                                      formik.setFieldValue("docVariables", {
-                                                        ...(formik.values.docVariables || {}),
-                                                        [variable]: event.target.value,
-                                                      })
-                                                    }
-                                                  />
-                                                )}
-                                              </Grid>
-                                            );
-                                          })}
-                                        </Grid>
-                                      )}
-                                    </Box>
-                                  )}
-                                </Box>
-                              );
-                            })}
-                          </Box>
-                        </Box>
-                      )}
-                    </Box>
-                  ))}
-
-                  {isEdit && (
-                    <Box className="mt-8">
-                      <SectionLabel>{t("Japanese Exam Variables")}</SectionLabel>
-                      <Grid container spacing={2} sx={{ mt: 0.5 }}>
-                        {STUDENT_DOC_EXAM_VARIABLES.map((variable) => (
-                          <Grid key={variable} size={{ xs: 12, md: 6 }}>
-                            {isLikelyDateVariable(variable) ? (
-                              <DatePicker
-                                label={formatDocVariableLabel(variable)}
-                                value={formik.values.docVariables?.[variable] ? dayjs(formik.values.docVariables?.[variable]) : null}
-                                onChange={(dateValue) =>
-                                  formik.setFieldValue("docVariables", {
-                                    ...(formik.values.docVariables || {}),
-                                    [variable]: dateValue?.format("YYYY-MM-DD") || "",
-                                  })
-                                }
-                                slotProps={{ textField: { fullWidth: true } }}
-                              />
-                            ) : isDatePartVariable(variable) ? (
-                              <TextField
-                                fullWidth
-                                type="number"
-                                label={formatDocVariableLabel(variable)}
-                                value={formik.values.docVariables?.[variable] || ""}
-                                onChange={(event) =>
-                                  formik.setFieldValue("docVariables", {
-                                    ...(formik.values.docVariables || {}),
-                                    [variable]: event.target.value,
-                                  })
-                                }
-                              />
-                            ) : (
-                              <TextField
-                                fullWidth
-                                label={formatDocVariableLabel(variable)}
-                                value={formik.values.docVariables?.[variable] || ""}
-                                onChange={(event) =>
-                                  formik.setFieldValue("docVariables", {
-                                    ...(formik.values.docVariables || {}),
-                                    [variable]: event.target.value,
-                                  })
-                                }
-                              />
-                            )}
-                          </Grid>
-                        ))}
-                      </Grid>
-                    </Box>
-                  )}
-                </Box>
-              )}
-
-              {tabValue === 7 && (
                 <Grid container spacing={3}>
                   <SectionLabel>{t("Links & Notes")}</SectionLabel>
                   <Grid size={{ xs: 12, md: 6 }}>
@@ -1217,6 +1189,7 @@ export default function StudentUpsert() {
                   <Grid size={{ xs: 12, md: 6 }}>
                     <TextField fullWidth multiline rows={4} id="internalNotes" name="internalNotes" label={t("Internal Notes")} value={formik.values.internalNotes || ""} onChange={formik.handleChange} />
                   </Grid>
+                  {renderExtraSection("Other")}
                 </Grid>
               )}
             </CardContent>

@@ -1,7 +1,6 @@
 import mongoose from 'mongoose';
 
 const documentTemplateSchema = new mongoose.Schema({
-    // Template metadata
     name: {
         type: String,
         required: true,
@@ -10,16 +9,13 @@ const documentTemplateSchema = new mongoose.Schema({
     docType: {
         type: String,
         required: true,
-        trim: true
-        // e.g. 'birth_certificate', 'enrollment_letter', 'admission_form', 'payment_receipt', etc.
+        trim: true,
+        enum: ['system', 'student', 'other']
     },
     fileType: {
         type: String,
         trim: true
-        // e.g. 'pdf', 'psd', 'ai', 'csv', 'xlsx'
     },
-
-    // Original uploaded template file path
     originalFilePath: {
         type: String,
         trim: true
@@ -28,15 +24,10 @@ const documentTemplateSchema = new mongoose.Schema({
         type: String,
         trim: true
     },
-
-    // HTML content with shortcodes for PDF generation
-    // e.g. "<h1>{{ name }}</h1><p>DOB: {{ dob }}</p>"
     templateContent: {
         type: String,
         default: ''
     },
-
-    // Shortcodes used in this template (for reference)
     shortcodes: {
         type: [String],
         default: []
@@ -46,10 +37,50 @@ const documentTemplateSchema = new mongoose.Schema({
         type: String,
         trim: true
     },
-
+    status: {
+        type: String,
+        enum: ['draft', 'active', 'inactive'],
+        default: 'draft'
+    },
     isActive: {
         type: Boolean,
         default: true
+    },
+    pageSettings: {
+        preset: {
+            type: String,
+            enum: ['A4', 'A3', 'Letter', 'Legal', 'Custom'],
+            default: 'A4'
+        },
+        orientation: {
+            type: String,
+            enum: ['portrait', 'landscape'],
+            default: 'portrait'
+        },
+        widthMm: {
+            type: Number,
+            default: 210
+        },
+        heightMm: {
+            type: Number,
+            default: 297
+        },
+        marginTopMm: {
+            type: Number,
+            default: 16
+        },
+        marginRightMm: {
+            type: Number,
+            default: 16
+        },
+        marginBottomMm: {
+            type: Number,
+            default: 16
+        },
+        marginLeftMm: {
+            type: Number,
+            default: 16
+        }
     }
 }, {
     timestamps: true

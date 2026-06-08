@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link, useParams } from "react-router-dom";
 import {
   Alert,
   Box,
@@ -68,6 +69,7 @@ const defaultSettings: SettingDocument = {
 };
 
 export default function SettingsPage() {
+  const { role } = useParams();
   const [settings, setSettings] = useState<SettingDocument>(defaultSettings);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -181,6 +183,18 @@ export default function SettingsPage() {
         </Grid>
 
         <Grid size={{ xs: 12, lg: 5 }}>
+          <Card className="mb-3">
+            <CardContent className="space-y-3">
+              <Typography variant="h6">Document Templates</Typography>
+              <Typography color="text.secondary">
+                Rich document builder for student variables, system variables, page sizes, tables, and print-ready layouts.
+              </Typography>
+              <Button component={Link} to={`/${role}/documents`} variant="contained">
+                Open Documents
+              </Button>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardContent>
               <Typography variant="h6" className="mb-4">System Variables</Typography>

@@ -9,7 +9,7 @@ const generatedDocumentSchema = new mongoose.Schema({
     student: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Student',
-        required: true
+        default: null
     },
     filePath: {
         type: String,
@@ -18,6 +18,14 @@ const generatedDocumentSchema = new mongoose.Schema({
     fileName: {
         type: String,
         required: true
+    },
+    contentType: {
+        type: String,
+        default: 'text/html; charset=utf-8'
+    },
+    fileExtension: {
+        type: String,
+        default: 'html'
     },
     downloadToken: {
         type: String,

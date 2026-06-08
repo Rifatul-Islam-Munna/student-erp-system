@@ -4,10 +4,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { parse } from 'csv-parse';
 import { stringify } from 'csv-stringify';
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import DocumentTemplate from '../models/DocumentTemplate.js';
 import GeneratedDocument from '../models/GeneratedDocument.js';
 import Student from '../models/Student.js';
+import Setting from '../models/Setting.js';
+import { getStudentVariableList } from '../utils/studentVariableMap.js';
 import logger from '../services/logger.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -15,80 +16,274 @@ const __dirname = path.dirname(__filename);
 const UPLOAD_DIR = path.join(__dirname, '../../uploads/templates');
 const GENERATED_DIR = path.join(__dirname, '../../uploads/generated');
 
-// --- SHORTCODE MAPPING ---
-const SHORTCODE_MAP = {
-    '{{ name }}': 'fullNameEn',
-    '{{ name_katakana }}': 'nameKatakana',
-    '{{ email }}': 'email',
-    '{{ phone }}': 'phone',
-    '{{ whatsapp }}': 'whatsapp',
-    '{{ guardian_phone }}': 'guardianPhone',
-    '{{ dob }}': 'dob',
-    '{{ gender }}': 'gender',
-    '{{ marital_status }}': 'maritalStatus',
-    '{{ nationality }}': 'nationality',
-    '{{ blood_group }}': 'bloodGroup',
-    '{{ national_id }}': 'nationalId',
-    '{{ passport_no }}': 'passportNo',
-    '{{ passport_issue_date }}': 'passportIssueDate',
-    '{{ passport_expiry_date }}': 'passportExpiryDate',
-    '{{ occupation }}': 'occupation',
-    '{{ spouse_name }}': 'spouseName',
-    '{{ emergency_contact }}': 'emergencyContact',
-    '{{ emergency_phone }}': 'emergencyPhone',
-    '{{ permanent_address }}': 'permanentAddress',
-    '{{ current_address }}': 'currentAddress',
-    '{{ visa_type }}': 'visaType',
-    '{{ country }}': 'country',
-    '{{ intake }}': 'intake',
-    '{{ expected_intake }}': 'expectedIntake',
-    '{{ source }}': 'source',
-    '{{ student_type }}': 'studentType'
+const PAGE_PRESETS = {
+    A4: { widthMm: 210, heightMm: 297 },
+    A3: { widthMm: 297, heightMm: 420 },
+    Letter: { widthMm: 216, heightMm: 279 },
+    Legal: { widthMm: 216, heightMm: 356 }
 };
 
-function resolveShortcodes(text, studentData) {
-    if (!text) return '';
-    let result = text;
-    for (const [shortcode, field] of Object.entries(SHORTCODE_MAP)) {
-        let value = studentData[field];
-        if (value instanceof Date) {
-            value = value.toISOString().split('T')[0]; // YYYY-MM-DD
-        }
-        result = result.replaceAll(shortcode, value || '');
-    }
-    return result;
-}
+const SYSTEM_VARIABLES = [
+    { templateVariable: '{{sys_agency_name}}', dbField: 'site.name', source: 'setting' },
+    { templateVariable: '{{sys_agency_address}}', dbField: 'site.address', source: 'setting' },
+    { templateVariable: '{{sys_agency_phone}}', dbField: 'site.phone', source: 'setting' },
+    { templateVariable: '{{sys_agency_email}}', dbField: 'site.email', source: 'setting' },
+    { templateVariable: '{{sys_today}}', dbField: 'runtime.today', source: 'runtime' },
+    { templateVariable: '{{sys_today:year}}', dbField: 'runtime.today', source: 'runtime' },
+    { templateVariable: '{{sys_today:month}}', dbField: 'runtime.today', source: 'runtime' },
+    { templateVariable: '{{sys_today:day}}', dbField: 'runtime.today', source: 'runtime' }
+];
 
-// --- TEMPLATE CRUD ---
+const escapeHtml = (value = '') =>
+    String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+
+const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const formatDateValue = (value) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toISOString().split('T')[0];
+};
+
+const getDatePart = (value, part) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    if (part === 'year') return String(date.getUTCFullYear());
+    if (part === 'month') return String(date.getUTCMonth() + 1).padStart(2, '0');
+    return String(date.getUTCDate()).padStart(2, '0');
+};
+
+const extractTemplateVariables = (content = '') =>
+    Array.from(new Set((String(content).match(/\{\{[^}]+\}\}/g) || []).map((item) => item.trim())));
+
+const normalizePageSettings = (pageSettings = {}) => {
+    const preset = pageSettings.preset || 'A4';
+    const orientation = pageSettings.orientation === 'landscape' ? 'landscape' : 'portrait';
+    const presetSize = PAGE_PRESETS[preset] || PAGE_PRESETS.A4;
+    const baseWidth = Number(pageSettings.widthMm) || presetSize.widthMm;
+    const baseHeight = Number(pageSettings.heightMm) || presetSize.heightMm;
+    const widthMm = orientation === 'landscape' ? Math.max(baseWidth, baseHeight) : Math.min(baseWidth, baseHeight);
+    const heightMm = orientation === 'landscape' ? Math.min(baseWidth, baseHeight) : Math.max(baseWidth, baseHeight);
+
+    return {
+        preset,
+        orientation,
+        widthMm,
+        heightMm,
+        marginTopMm: Number(pageSettings.marginTopMm) || 16,
+        marginRightMm: Number(pageSettings.marginRightMm) || 16,
+        marginBottomMm: Number(pageSettings.marginBottomMm) || 16,
+        marginLeftMm: Number(pageSettings.marginLeftMm) || 16
+    };
+};
+
+const buildSystemVariableMap = (settingsDoc = {}) => {
+    const today = new Date();
+
+    return {
+        '{{sys_agency_name}}': settingsDoc?.site?.name || '',
+        '{{sys_agency_address}}': settingsDoc?.site?.address || '',
+        '{{sys_agency_phone}}': settingsDoc?.site?.phone || '',
+        '{{sys_agency_email}}': settingsDoc?.site?.email || '',
+        '{{sys_today}}': formatDateValue(today),
+        '{{sys_today:year}}': getDatePart(today, 'year'),
+        '{{sys_today:month}}': getDatePart(today, 'month'),
+        '{{sys_today:day}}': getDatePart(today, 'day')
+    };
+};
+
+const buildStudentVariableMap = (studentDoc = {}) => {
+    const docVariables = studentDoc?.docVariables || {};
+    const normalized = {};
+
+    Object.entries(docVariables).forEach(([key, value]) => {
+        normalized[key] = value == null ? '' : String(value);
+    });
+
+    return normalized;
+};
+
+const renderTemplateContent = (content = '', variableMap = {}) => {
+    const variables = Object.keys(variableMap).sort((a, b) => b.length - a.length);
+    let rendered = String(content || '');
+
+    variables.forEach((key) => {
+        rendered = rendered.replace(new RegExp(escapeRegExp(key), 'g'), variableMap[key] || '');
+    });
+
+    return rendered;
+};
+
+const buildPrintHtml = ({ template, content, title }) => {
+    const settings = normalizePageSettings(template?.pageSettings);
+    const pageSizeCss = `${settings.widthMm}mm ${settings.heightMm}mm`;
+    const pagePaddingCss = `${settings.marginTopMm}mm ${settings.marginRightMm}mm ${settings.marginBottomMm}mm ${settings.marginLeftMm}mm`;
+
+    return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>${escapeHtml(title || template?.name || 'Document')}</title>
+    <style>
+      @page {
+        size: ${pageSizeCss};
+        margin: 0;
+      }
+
+      :root {
+        color-scheme: light;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: #d8dee8;
+        font-family: Mulish, Arial, sans-serif;
+        color: #172033;
+      }
+
+      .page-shell {
+        min-height: 100vh;
+        padding: 24px;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+      }
+
+      .page {
+        width: ${settings.widthMm}mm;
+        min-height: ${settings.heightMm}mm;
+        background: #ffffff;
+        padding: ${pagePaddingCss};
+        box-shadow: 0 24px 70px rgba(16, 24, 40, 0.16);
+      }
+
+      .page * {
+        max-width: 100%;
+      }
+
+      p {
+        margin: 0 0 12px;
+        line-height: 1.65;
+      }
+
+      h1, h2, h3, h4, h5, h6 {
+        margin: 0 0 14px;
+        line-height: 1.2;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 10px 0 18px;
+      }
+
+      th, td {
+        border: 1px solid #334155;
+        padding: 8px 10px;
+        vertical-align: top;
+      }
+
+      ul, ol {
+        padding-left: 24px;
+      }
+
+      blockquote {
+        border-left: 4px solid #94a3b8;
+        margin: 14px 0;
+        padding: 8px 0 8px 16px;
+        color: #475569;
+      }
+
+      img {
+        display: inline-block;
+        max-width: 100%;
+        height: auto;
+      }
+
+      @media print {
+        body {
+          background: #ffffff;
+        }
+
+        .page-shell {
+          padding: 0;
+        }
+
+        .page {
+          box-shadow: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page-shell">
+      <div class="page ql-editor">${content || '<p></p>'}</div>
+    </div>
+  </body>
+</html>`;
+};
+
+const serializeTemplate = (template) => {
+    const record = typeof template?.toObject === 'function' ? template.toObject() : template;
+    if (!record) return record;
+
+    return {
+        ...record,
+        pageSettings: normalizePageSettings(record.pageSettings),
+        shortcodes: Array.isArray(record.shortcodes) ? record.shortcodes : extractTemplateVariables(record.templateContent || '')
+    };
+};
+
+const ensureDirectories = () => {
+    if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+    if (!fs.existsSync(GENERATED_DIR)) fs.mkdirSync(GENERATED_DIR, { recursive: true });
+};
+
+ensureDirectories();
 
 export const getAllTemplates = async (request, reply) => {
     try {
-        const { page = 1, limit = 10, search, docType, isActive } = request.query;
+        const { page = 1, limit = 10, search, docType, status, isActive } = request.query;
         const query = {};
+
         if (search) {
             query.$or = [
                 { name: { $regex: search, $options: 'i' } },
-                { docType: { $regex: search, $options: 'i' } }
+                { description: { $regex: search, $options: 'i' } }
             ];
         }
+
         if (docType) query.docType = docType;
+        if (status) query.status = status;
         if (typeof isActive === 'boolean') query.isActive = isActive;
 
-        const skip = (parseInt(page) - 1) * parseInt(limit);
+        const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
 
         const [templates, total] = await Promise.all([
-            DocumentTemplate.find(query).sort({ createdAt: -1 }).skip(skip).limit(parseInt(limit)),
+            DocumentTemplate.find(query).sort({ updatedAt: -1 }).skip(skip).limit(parseInt(limit, 10)).lean(),
             DocumentTemplate.countDocuments(query)
         ]);
 
         return reply.code(200).send({
             success: true,
-            data: templates,
+            data: templates.map(serializeTemplate),
             pagination: {
                 total,
-                pages: Math.ceil(total / parseInt(limit)),
-                page: parseInt(page),
-                limit: parseInt(limit)
+                pages: Math.ceil(total / parseInt(limit, 10)),
+                page: parseInt(page, 10),
+                limit: parseInt(limit, 10)
             }
         });
     } catch (error) {
@@ -99,9 +294,9 @@ export const getAllTemplates = async (request, reply) => {
 
 export const getTemplateById = async (request, reply) => {
     try {
-        const template = await DocumentTemplate.findById(request.params.id);
+        const template = await DocumentTemplate.findById(request.params.id).lean();
         if (!template) return reply.code(404).send({ success: false, message: 'Template not found.' });
-        return reply.code(200).send({ success: true, data: template });
+        return reply.code(200).send({ success: true, data: serializeTemplate(template) });
     } catch (error) {
         logger.error(error);
         return reply.code(500).send({ success: false, message: 'Failed to find template.' });
@@ -110,8 +305,18 @@ export const getTemplateById = async (request, reply) => {
 
 export const createTemplate = async (request, reply) => {
     try {
-        const template = await DocumentTemplate.create(request.body);
-        return reply.code(201).send({ success: true, message: 'Template created successfully.', data: template });
+        const payload = {
+            ...request.body,
+            pageSettings: normalizePageSettings(request.body?.pageSettings),
+            shortcodes: extractTemplateVariables(request.body?.templateContent || '')
+        };
+
+        const template = await DocumentTemplate.create(payload);
+        return reply.code(201).send({
+            success: true,
+            message: 'Template created successfully.',
+            data: serializeTemplate(template)
+        });
     } catch (error) {
         logger.error(error);
         return reply.code(500).send({ success: false, message: 'Failed to create template.' });
@@ -120,9 +325,19 @@ export const createTemplate = async (request, reply) => {
 
 export const updateTemplate = async (request, reply) => {
     try {
-        const template = await DocumentTemplate.findByIdAndUpdate(request.params.id, request.body, { new: true, runValidators: true });
+        const payload = { ...request.body };
+
+        if (payload.pageSettings) {
+            payload.pageSettings = normalizePageSettings(payload.pageSettings);
+        }
+
+        if (payload.templateContent !== undefined) {
+            payload.shortcodes = extractTemplateVariables(payload.templateContent || '');
+        }
+
+        const template = await DocumentTemplate.findByIdAndUpdate(request.params.id, payload, { new: true, runValidators: true });
         if (!template) return reply.code(404).send({ success: false, message: 'Template not found.' });
-        return reply.send({ success: true, message: 'Template updated successfully.', data: template });
+        return reply.send({ success: true, message: 'Template updated successfully.', data: serializeTemplate(template) });
     } catch (error) {
         logger.error(error);
         return reply.code(500).send({ success: false, message: 'Failed to update template.' });
@@ -134,7 +349,6 @@ export const deleteTemplate = async (request, reply) => {
         const template = await DocumentTemplate.findByIdAndDelete(request.params.id);
         if (!template) return reply.code(404).send({ success: false, message: 'Template not found.' });
 
-        // Remove uploaded file if exists
         if (template.originalFilePath && fs.existsSync(template.originalFilePath)) {
             fs.unlinkSync(template.originalFilePath);
         }
@@ -145,8 +359,6 @@ export const deleteTemplate = async (request, reply) => {
         return reply.code(500).send({ success: false, message: 'Failed to delete template.' });
     }
 };
-
-// --- FILE UPLOAD ---
 
 export const uploadTemplateFile = async (request, reply) => {
     try {
@@ -161,7 +373,6 @@ export const uploadTemplateFile = async (request, reply) => {
         const safeName = `${template._id}_${Date.now()}${ext}`;
         const filePath = path.join(UPLOAD_DIR, safeName);
 
-        // Save file to disk
         const writeStream = fs.createWriteStream(filePath);
         await new Promise((resolve, reject) => {
             data.file.pipe(writeStream);
@@ -169,7 +380,6 @@ export const uploadTemplateFile = async (request, reply) => {
             data.file.on('error', reject);
         });
 
-        // Remove old file if exists
         if (template.originalFilePath && fs.existsSync(template.originalFilePath)) {
             fs.unlinkSync(template.originalFilePath);
         }
@@ -179,103 +389,53 @@ export const uploadTemplateFile = async (request, reply) => {
         template.fileType = ext.replace('.', '');
         await template.save();
 
-        return reply.send({ success: true, message: 'File uploaded successfully.', data: template });
+        return reply.send({ success: true, message: 'File uploaded successfully.', data: serializeTemplate(template) });
     } catch (error) {
         logger.error(error);
         return reply.code(500).send({ success: false, message: 'Failed to upload file.' });
     }
 };
 
-// --- PDF GENERATION WITH SHORTCODE REPLACEMENT ---
-
 export const generateDocument = async (request, reply) => {
     try {
         const { templateId, studentId } = request.body;
 
-        const [template, student] = await Promise.all([
-            DocumentTemplate.findById(templateId),
-            Student.findById(studentId).lean()
+        const [template, student, settingsDoc] = await Promise.all([
+            DocumentTemplate.findById(templateId).lean(),
+            studentId ? Student.findById(studentId).lean() : Promise.resolve(null),
+            Setting.findOne().lean()
         ]);
 
         if (!template) return reply.code(404).send({ success: false, message: 'Template not found.' });
-        if (!student) return reply.code(404).send({ success: false, message: 'Student not found.' });
-
-        // Resolve all shortcodes from the template content
-        const resolvedContent = resolveShortcodes(template.templateContent, student);
-
-        // Generate a PDF document
-        const pdfDoc = await PDFDocument.create();
-        const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-        const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-
-        // Split resolved content into lines and render on PDF pages
-        const lines = resolvedContent.split('\n');
-        const fontSize = 12;
-        const titleFontSize = 18;
-        const margin = 50;
-        const lineHeight = fontSize * 1.5;
-        const pageWidth = 595.28; // A4
-        const pageHeight = 841.89;
-        const maxY = pageHeight - margin;
-        const maxWidth = pageWidth - 2 * margin;
-
-        let page = pdfDoc.addPage([pageWidth, pageHeight]);
-        let y = maxY;
-
-        for (const line of lines) {
-            if (y < margin + lineHeight) {
-                page = pdfDoc.addPage([pageWidth, pageHeight]);
-                y = maxY;
-            }
-
-            const isTitle = line.startsWith('#');
-            const cleanLine = line.replace(/^#+\s*/, '');
-            const currentFont = isTitle ? boldFont : font;
-            const currentSize = isTitle ? titleFontSize : fontSize;
-
-            // Word-wrap logic
-            const words = cleanLine.split(' ');
-            let currentLine = '';
-
-            for (const word of words) {
-                const testLine = currentLine ? `${currentLine} ${word}` : word;
-                const textWidth = currentFont.widthOfTextAtSize(testLine, currentSize);
-                if (textWidth > maxWidth && currentLine) {
-                    page.drawText(currentLine, { x: margin, y, size: currentSize, font: currentFont, color: rgb(0, 0, 0) });
-                    y -= lineHeight;
-                    currentLine = word;
-                    if (y < margin + lineHeight) {
-                        page = pdfDoc.addPage([pageWidth, pageHeight]);
-                        y = maxY;
-                    }
-                } else {
-                    currentLine = testLine;
-                }
-            }
-            if (currentLine) {
-                page.drawText(currentLine, { x: margin, y, size: currentSize, font: currentFont, color: rgb(0, 0, 0) });
-                y -= lineHeight;
-            }
-
-            // Extra spacing after titles
-            if (isTitle) y -= lineHeight * 0.5;
+        if (template.docType === 'student' && !student) {
+            return reply.code(400).send({ success: false, message: 'Student document needs valid student.' });
         }
 
-        const pdfBytes = await pdfDoc.save();
+        const variableMap = {
+            ...buildSystemVariableMap(settingsDoc),
+            ...(student ? buildStudentVariableMap(student) : {})
+        };
 
-        // Save generated file
+        const renderedContent = renderTemplateContent(template.templateContent, variableMap);
+        const renderedHtml = buildPrintHtml({
+            template,
+            content: renderedContent,
+            title: student ? `${template.name} - ${student.fullNameEn}` : template.name
+        });
+
         const token = crypto.randomUUID();
-        const fileName = `${template.docType}_${student.fullNameEn.replace(/\s+/g, '_')}_${Date.now()}.pdf`;
+        const fileName = `${template.name.replace(/[^a-z0-9_-]+/gi, '_')}_${Date.now()}.html`;
         const filePath = path.join(GENERATED_DIR, fileName);
-        fs.writeFileSync(filePath, pdfBytes);
+        fs.writeFileSync(filePath, renderedHtml, 'utf8');
 
-        // Store download record (expires in 24 hours)
         const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
         await GeneratedDocument.create({
             template: template._id,
-            student: student._id,
+            student: student?._id || null,
             filePath,
             fileName,
+            contentType: 'text/html; charset=utf-8',
+            fileExtension: 'html',
             downloadToken: token,
             expiresAt,
             generatedBy: request.user?.id || null
@@ -288,15 +448,14 @@ export const generateDocument = async (request, reply) => {
             success: true,
             message: 'Document generated successfully.',
             downloadUrl,
-            expiresAt: expiresAt.toISOString()
+            expiresAt: expiresAt.toISOString(),
+            renderedHtml
         });
     } catch (error) {
         logger.error(error);
         return reply.code(500).send({ success: false, message: 'Failed to generate document.' });
     }
 };
-
-// --- TEMPORARY DOWNLOAD ---
 
 export const downloadDocument = async (request, reply) => {
     try {
@@ -308,7 +467,6 @@ export const downloadDocument = async (request, reply) => {
         }
 
         if (new Date() > doc.expiresAt) {
-            // Clean up expired file
             if (fs.existsSync(doc.filePath)) fs.unlinkSync(doc.filePath);
             await GeneratedDocument.findByIdAndDelete(doc._id);
             return reply.code(410).send({ success: false, message: 'Download link has expired.' });
@@ -318,7 +476,7 @@ export const downloadDocument = async (request, reply) => {
             return reply.code(404).send({ success: false, message: 'Generated file not found on server.' });
         }
 
-        reply.header('Content-Type', 'application/pdf');
+        reply.header('Content-Type', doc.contentType || 'application/octet-stream');
         reply.header('Content-Disposition', `attachment; filename="${doc.fileName}"`);
 
         const stream = fs.createReadStream(doc.filePath);
@@ -329,27 +487,33 @@ export const downloadDocument = async (request, reply) => {
     }
 };
 
-// --- SHORTCODES LIST ---
-
-export const getAvailableShortcodes = async (request, reply) => {
+export const getAvailableShortcodes = async (_request, reply) => {
     return reply.send({
         success: true,
-        data: Object.entries(SHORTCODE_MAP).map(([code, field]) => ({ shortcode: code, mapsTo: field }))
+        data: {
+            student: getStudentVariableList().map((item) => ({
+                templateVariable: item.templateVariable,
+                variableName: item.variableName,
+                dbField: item.dbField,
+                source: item.source
+            })),
+            system: SYSTEM_VARIABLES
+        }
     });
 };
 
-// --- EXPORT / IMPORT ---
-
-export const exportTemplates = async (request, reply) => {
+export const exportTemplates = async (_request, reply) => {
     try {
         const templates = await DocumentTemplate.find().lean();
-        const csvData = templates.map(t => ({
-            Name: t.name,
-            DocType: t.docType,
-            FileType: t.fileType || '',
-            Active: t.isActive ? 'Yes' : 'No',
-            Description: t.description || '',
-            Shortcodes: (t.shortcodes || []).join('; ')
+        const csvData = templates.map((template) => ({
+            Name: template.name,
+            DocumentType: template.docType,
+            Status: template.status || 'draft',
+            Active: template.isActive ? 'Yes' : 'No',
+            PagePreset: template.pageSettings?.preset || 'A4',
+            Orientation: template.pageSettings?.orientation || 'portrait',
+            Description: template.description || '',
+            Variables: (template.shortcodes || []).join('; ')
         }));
 
         reply.header('Content-Type', 'text/csv');
@@ -370,22 +534,26 @@ export const importTemplates = async (request, reply) => {
         const parser = data.file.pipe(parse({ columns: true, skip_empty_lines: true }));
 
         for await (const row of parser) {
-            const name = row['Name'];
-            if (name) {
-                operations.push({
-                    updateOne: {
-                        filter: { name },
-                        update: {
-                            docType: row['DocType'] || 'general',
-                            fileType: row['FileType'] || '',
-                            isActive: row['Active'] === 'Yes',
-                            description: row['Description'] || '',
-                            shortcodes: row['Shortcodes'] ? row['Shortcodes'].split(';').map(s => s.trim()) : []
-                        },
-                        upsert: true
-                    }
-                });
-            }
+            const name = row.Name;
+            if (!name) continue;
+
+            operations.push({
+                updateOne: {
+                    filter: { name },
+                    update: {
+                        docType: row.DocumentType || 'other',
+                        status: row.Status || 'draft',
+                        isActive: row.Active === 'Yes',
+                        description: row.Description || '',
+                        shortcodes: row.Variables ? row.Variables.split(';').map((item) => item.trim()).filter(Boolean) : [],
+                        pageSettings: normalizePageSettings({
+                            preset: row.PagePreset || 'A4',
+                            orientation: row.Orientation || 'portrait'
+                        })
+                    },
+                    upsert: true
+                }
+            });
         }
 
         if (operations.length > 0) {

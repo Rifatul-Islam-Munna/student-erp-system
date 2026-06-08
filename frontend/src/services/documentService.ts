@@ -1,5 +1,5 @@
 import { fetchApi } from "@/lib/api";
-import { DocumentTemplate, DocumentQuery } from "@/types/document";
+import { DocumentQuery, DocumentTemplate } from "@/types/document";
 
 export const DocumentService = {
   getDocuments: async (query: DocumentQuery = {}) => {
@@ -85,8 +85,12 @@ export const DocumentService = {
     return response.json();
   },
 
-  generateDocument: async (id: string, data: Record<string, any> = {}) => {
-    return fetchApi(`/documents/generate/${id}`, {
+  getAvailableVariables: async () => {
+    return fetchApi("/documents/shortcodes");
+  },
+
+  generateDocument: async (data: { templateId: string; studentId?: string }) => {
+    return fetchApi("/documents/generate", {
       method: "POST",
       body: JSON.stringify(data),
     });
