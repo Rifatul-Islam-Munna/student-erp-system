@@ -2,9 +2,14 @@ import { useCallback, useEffect, useState, ChangeEvent, MouseEvent, useMemo, use
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
+  Alert,
   Box,
   Button,
   Breadcrumbs,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Typography,
   Grid,
   Tooltip,
@@ -21,13 +26,20 @@ import {
   TextField,
   InputAdornment,
   Divider,
+  List,
+  ListItemButton,
+  ListItemText,
+  CircularProgress,
 } from "@mui/material";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import dayjs from "dayjs";
+import { useSnackbar } from "notistack";
 
+import { DocumentService } from "@/services/documentService";
 import { StudentService } from "@/services/studentService";
+import { DocumentTemplate } from "@/types/document";
 import { Student, StudentQuery } from "@/types/student";
 import NiPlus from "@/icons/nexture/ni-plus";
 import NiEyeOpen from "@/icons/nexture/ni-eye-open";
@@ -40,6 +52,7 @@ import NiArrowUp from "@/icons/nexture/ni-arrow-up";
 import NiChevronDownSmall from "@/icons/nexture/ni-chevron-down-small";
 import NiChevronLeftSmall from "@/icons/nexture/ni-chevron-left-small";
 import NiChevronRightSmall from "@/icons/nexture/ni-chevron-right-small";
+import NiDocumentCode from "@/icons/nexture/ni-document-code";
 import {
   CheckboxSmallChecked,
   CheckboxSmallEmptyOutlined,
@@ -56,6 +69,7 @@ interface HeadCell {
 
 export default function StudentsIndex() {
   const { t } = useTranslation();
+  const { enqueueSnackbar } = useSnackbar();
   const navigate = useNavigate();
   const { role } = useParams();
 
@@ -63,6 +77,12 @@ export default function StudentsIndex() {
   const [students, setStudents] = useState<Student[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [documentTemplates, setDocumentTemplates] = useState<DocumentTemplate[]>([]);
+  const [documentDialogOpen, setDocumentDialogOpen] = useState(false);
+  const [documentLoading, setDocumentLoading] = useState(false);
+  const [documentError, setDocumentError] = useState<string | null>(null);
+  const [documentStudent, setDocumentStudent] = useState<Student | null>(null);
+  const [generatingTemplateId, setGeneratingTemplateId] = useState<string | null>(null);
 
   // Pagination State
   const [page, setPage] = useState(0);
@@ -167,6 +187,94 @@ export default function StudentsIndex() {
       } catch (error) {
         console.error("Failed to delete student", error);
       }
+    }
+  };
+
+  const openDocumentDialog = async (student: Student) => {
+    setDocumentStudent(student);
+    setDocumentDialogOpen(true);
+    setDocumentLoading(true);
+    setDocumentError(null);
+
+    try {
+      const response = await DocumentService.getDocuments({
+        docType: "student",
+        status: "active",
+        isActive: true,
+        limit: 100,
+      });
+
+      setDocumentTemplates(Array.isArray(response.data) ? response.data : []);
+    } catch (error) {
+      console.error("Failed to load document templates", error);
+      setDocumentError("Failed to load document templates");
+    } finally {
+      setDocumentLoading(false);
+    }
+  };
+
+  const closeDocumentDialog = () => {
+    setDocumentDialogOpen(false);
+    setDocumentStudent(null);
+    setDocumentError(null);
+    setGeneratingTemplateId(null);
+  };
+
+  const openPrintWindow = (html: string, title: string) => {
+    const printWindow = window.open("", "_blank", "noopener,noreferrer");
+    if (!printWindow) {
+      enqueueSnackbar(t("Popup blocked. Please allow popups and try again."), { variant: "error" });
+      return;
+    }
+
+    const printHtml = html.replace(
+      "</body>",
+      `<script>
+        window.onload = function () {
+          setTimeout(function () {
+            window.focus();
+            window.print();
+          }, 250);
+        };
+      </script></body>`,
+    );
+
+    printWindow.document.open();
+    printWindow.document.write(printHtml);
+    printWindow.document.title = title;
+    printWindow.document.close();
+  };
+
+  const handleGenerateStudentDocument = async (template: DocumentTemplate) => {
+    if (!documentStudent?._id || !template._id) return;
+
+    setGeneratingTemplateId(template._id);
+    try {
+      const response = await DocumentService.generateDocument({
+        templateId: template._id,
+        studentId: documentStudent._id,
+      });
+
+      if (response.renderedHtml) {
+        openPrintWindow(response.renderedHtml, `${template.name} - ${documentStudent.fullNameEn}`);
+        enqueueSnackbar(t("Document ready. Save it as PDF from print window."), { variant: "success" });
+        closeDocumentDialog();
+      }
+    } catch (error: any) {
+      const missingVariables = Array.isArray(error?.missingVariables) ? error.missingVariables : [];
+      const missingCount = Number(error?.missingCount) || missingVariables.length;
+
+      if (missingCount > 0) {
+        const message = missingCount === 1
+          ? `${missingVariables[0] || "1 variable"} ${t("is missing. Please fix it first.")}`
+          : `${missingCount} ${t("variables are missing. Please fix them first.")}`;
+        enqueueSnackbar(message, { variant: "error" });
+        return;
+      }
+
+      enqueueSnackbar(error?.message || t("Failed to generate document"), { variant: "error" });
+    } finally {
+      setGeneratingTemplateId(null);
     }
   };
 
@@ -401,6 +509,12 @@ export default function StudentsIndex() {
                             <NiBinEmpty size="medium" />
                           </IconButton>
                         </Tooltip>
+                        <Tooltip title={t("Document")}>
+                          <IconButton size="small" onClick={() => void openDocumentDialog(student)}
+                            sx={{ transition: "all 0.2s", "&:hover": { bgcolor: "primary.50", color: "primary.main" } }}>
+                            <NiDocumentCode size="medium" />
+                          </IconButton>
+                        </Tooltip>
                       </Box>
                     </TableCell>
                   </TableRow>
@@ -462,6 +576,49 @@ export default function StudentsIndex() {
           }}
         />
       </TableContainer>
+
+      <Dialog open={documentDialogOpen} onClose={closeDocumentDialog} fullWidth maxWidth="sm">
+        <DialogTitle>{t("Student Documents")}</DialogTitle>
+        <DialogContent dividers>
+          <Typography variant="body2" color="text.secondary" className="mb-4">
+            {documentStudent ? `${t("Choose document for")} ${documentStudent.fullNameEn}` : t("Choose document")}
+          </Typography>
+
+          {documentError && (
+            <Alert severity="error" className="mb-4">
+              {t(documentError)}
+            </Alert>
+          )}
+
+          {documentLoading ? (
+            <Box className="flex items-center justify-center py-10">
+              <CircularProgress size={28} />
+            </Box>
+          ) : documentTemplates.length === 0 ? (
+            <Alert severity="info">{t("No active student documents found")}</Alert>
+          ) : (
+            <List disablePadding className="space-y-2">
+              {documentTemplates.map((template) => (
+                <ListItemButton
+                  key={template._id}
+                  onClick={() => void handleGenerateStudentDocument(template)}
+                  disabled={generatingTemplateId === template._id}
+                  className="rounded-xl border border-divider"
+                >
+                  <ListItemText
+                    primary={template.name}
+                    secondary={template.description || `${template.pageSettings?.preset || "A4"} / ${template.status}`}
+                  />
+                  {generatingTemplateId === template._id && <CircularProgress size={20} />}
+                </ListItemButton>
+              ))}
+            </List>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button color="grey" onClick={closeDocumentDialog}>{t("Close")}</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

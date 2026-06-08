@@ -20,7 +20,9 @@ export async function fetchApi(endpoint: string, options: RequestInit = {}) {
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    throw new Error(data.message || "An error occurred while fetching the api");
+    const error = new Error(data.message || "An error occurred while fetching the api") as Error & Record<string, any>;
+    Object.assign(error, data);
+    throw error;
   }
 
   return data;

@@ -121,6 +121,17 @@ const renderTemplateContent = (content = '', variableMap = {}) => {
     return rendered;
 };
 
+const findMissingVariables = (template = {}, variableMap = {}) => {
+    const templateVariables = Array.isArray(template?.shortcodes) && template.shortcodes.length > 0
+        ? template.shortcodes
+        : extractTemplateVariables(template?.templateContent || '');
+
+    return templateVariables.filter((variable) => {
+        const value = variableMap[variable];
+        return value == null || String(value).trim() === '';
+    });
+};
+
 const buildPrintHtml = ({ template, content, title }) => {
     const settings = normalizePageSettings(template?.pageSettings);
     const pageSizeCss = `${settings.widthMm}mm ${settings.heightMm}mm`;
@@ -415,6 +426,18 @@ export const generateDocument = async (request, reply) => {
             ...buildSystemVariableMap(settingsDoc),
             ...(student ? buildStudentVariableMap(student) : {})
         };
+
+        const missingVariables = findMissingVariables(template, variableMap);
+        if (missingVariables.length > 0) {
+            return reply.code(400).send({
+                success: false,
+                message: missingVariables.length === 1
+                    ? '1 variable is missing. Please fix it first.'
+                    : `${missingVariables.length} variables are missing. Please fix them first.`,
+                missingVariables,
+                missingCount: missingVariables.length
+            });
+        }
 
         const renderedContent = renderTemplateContent(template.templateContent, variableMap);
         const renderedHtml = buildPrintHtml({

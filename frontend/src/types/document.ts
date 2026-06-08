@@ -38,6 +38,16 @@ export interface DocumentTemplate {
   updatedAt?: string;
 }
 
+export interface GenerateDocumentResponse {
+  success: boolean;
+  message?: string;
+  downloadUrl?: string;
+  renderedHtml?: string;
+  expiresAt?: string;
+  missingVariables?: string[];
+  missingCount?: number;
+}
+
 export interface DocumentQuery {
   page?: number;
   limit?: number;
