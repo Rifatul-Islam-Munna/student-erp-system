@@ -35,6 +35,46 @@ const SYSTEM_VARIABLES = [
     { templateVariable: '{{sys_today:day}}', dbField: 'runtime.today', source: 'runtime' }
 ];
 
+const MULTILINGUAL_FONT_STYLESHEET = 'https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;700&family=Noto+Sans+Bengali:wght@400;500;700&family=Noto+Sans+JP:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700&display=swap';
+
+const DEFAULT_SANS_FONT_STACK = [
+    '"Noto Sans Bengali"',
+    '"Noto Sans JP"',
+    '"Noto Sans SC"',
+    '"Noto Sans"',
+    '"Nirmala UI"',
+    '"Yu Gothic UI"',
+    '"Yu Gothic"',
+    'Meiryo',
+    '"Microsoft YaHei UI"',
+    '"Microsoft YaHei"',
+    '"PingFang SC"',
+    '"Hiragino Sans GB"',
+    'SimSun',
+    '"Arial Unicode MS"',
+    'Arial',
+    'sans-serif'
+].join(', ');
+
+const DEFAULT_SERIF_FONT_STACK = [
+    '"Noto Serif Bengali"',
+    '"Noto Serif JP"',
+    '"Noto Serif SC"',
+    '"Noto Serif"',
+    'Georgia',
+    '"Times New Roman"',
+    'serif'
+].join(', ');
+
+const DEFAULT_MONO_FONT_STACK = [
+    '"Noto Sans Mono CJK SC"',
+    '"Noto Sans Mono"',
+    'Consolas',
+    'Monaco',
+    '"Courier New"',
+    'monospace'
+].join(', ');
+
 const escapeHtml = (value = '') =>
     String(value)
         .replace(/&/g, '&amp;')
@@ -147,18 +187,36 @@ const buildCustomFontCss = (template = {}) => {
         .join('\n');
 };
 
+const detectDocumentLanguage = (content = '') => {
+    const value = String(content || '');
+    const hasBangla = /[\u0980-\u09FF]/.test(value);
+    const hasJapanese = /[\u3040-\u30FF]/.test(value);
+    const hasChinese = /[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/.test(value);
+    const matchCount = [hasBangla, hasJapanese, hasChinese].filter(Boolean).length;
+
+    if (matchCount > 1) return 'und';
+    if (hasBangla) return 'bn';
+    if (hasJapanese) return 'ja';
+    if (hasChinese) return 'zh';
+    return 'en';
+};
+
 const buildPrintHtml = ({ template, content, title }) => {
     const settings = normalizePageSettings(template?.pageSettings);
     const pageSizeCss = `${settings.widthMm}mm ${settings.heightMm}mm`;
     const pagePaddingCss = `${settings.marginTopMm}mm ${settings.marginRightMm}mm ${settings.marginBottomMm}mm ${settings.marginLeftMm}mm`;
     const customFontCss = buildCustomFontCss(template);
+    const htmlLang = detectDocumentLanguage(content);
 
     return `<!doctype html>
-<html lang="en">
+<html lang="${htmlLang}">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>${escapeHtml(title || template?.name || 'Document')}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="${MULTILINGUAL_FONT_STYLESHEET}" rel="stylesheet" />
     <style>
       @page {
         size: ${pageSizeCss};
@@ -182,11 +240,12 @@ const buildPrintHtml = ({ template, content, title }) => {
       body {
         margin: 0;
         background: #d8dee8;
-        font-family: Mulish, Arial, sans-serif;
+        font-family: ${DEFAULT_SANS_FONT_STACK};
         color: #172033;
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
         text-rendering: geometricPrecision;
+        overflow-wrap: anywhere;
       }
 
       .page-shell {
@@ -311,11 +370,11 @@ const buildPrintHtml = ({ template, content, title }) => {
       }
 
       .ql-font-serif {
-        font-family: Georgia, Times New Roman, serif;
+        font-family: ${DEFAULT_SERIF_FONT_STACK};
       }
 
       .ql-font-monospace {
-        font-family: Consolas, Monaco, monospace;
+        font-family: ${DEFAULT_MONO_FONT_STACK};
       }
 
       .ql-script-sub {
