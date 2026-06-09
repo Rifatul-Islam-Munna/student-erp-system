@@ -16,6 +16,7 @@ import {
 
 import { PermissionService } from "@/services/permissionService";
 import { Permission } from "@/types/permission";
+import { normalizePermissionRecord } from "@/lib/permissions";
 import NiPen from "@/icons/nexture/ni-pen";
 import NiArrowLeft from "@/icons/nexture/ni-arrow-left";
 import NiBinEmpty from "@/icons/nexture/ni-bin-empty";
@@ -59,6 +60,7 @@ export default function PermissionView() {
 
   if (loading) return <Box className="p-4"><Typography>{t("Loading...")}</Typography></Box>;
   if (!permission) return <Box className="p-4"><Typography>{t("Permission not found")}</Typography></Box>;
+  const normalizedPermission = normalizePermissionRecord(permission);
 
   const InfoItem = ({ label, value }: { label: string; value?: string | number | null | string[] }) => (
     <Box className="mb-3">
@@ -106,15 +108,14 @@ export default function PermissionView() {
               <Box className="flex flex-col items-center">
                 <Typography variant="h4" className="mb-2">{permission.name}</Typography>
                 <Box className="flex gap-2 mb-4">
-                  <Chip label={permission.key} size="small" color="info" variant="outlined" />
-                  {permission.category && <Chip label={permission.category} size="small" color="primary" variant="outlined" />}
+                  <Chip label={normalizedPermission.key} size="small" color="info" variant="outlined" />
+                  {normalizedPermission.module && <Chip label={normalizedPermission.module} size="small" color="primary" variant="outlined" />}
                 </Box>
                 <Divider className="w-full my-4" />
                 <Box className="w-full">
-                  <InfoItem label={t("Name")} value={permission.name} />
-                  <InfoItem label={t("Key")} value={permission.key} />
-                  <InfoItem label={t("Category")} value={permission.category} />
-                  <InfoItem label={t("Description")} value={permission.description} />
+                  <InfoItem label={t("Permission Key")} value={normalizedPermission.key} />
+                  <InfoItem label={t("Module")} value={normalizedPermission.module} />
+                  <InfoItem label={t("Description")} value={normalizedPermission.description} />
                   <InfoItem label={t("Created At")} value={formatDate(permission.createdAt)} />
                   <InfoItem label={t("Updated At")} value={formatDate(permission.updatedAt)} />
                 </Box>

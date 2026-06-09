@@ -1,8 +1,9 @@
 export interface Permission {
   _id?: string;
   name: string;
-  key: string;
+  key?: string;
   description?: string;
+  module?: string;
   category?: string;
   createdAt?: string;
   updatedAt?: string;

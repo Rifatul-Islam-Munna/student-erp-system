@@ -22,11 +22,11 @@ import {
   InputAdornment,
   Divider,
   Chip,
-  MenuItem,
 } from "@mui/material";
 
 import { PermissionService } from "@/services/permissionService";
-import { Permission, PermissionQuery } from "@/types/permission";
+import { Permission } from "@/types/permission";
+import { normalizePermissionRecord } from "@/lib/permissions";
 import NiPlus from "@/icons/nexture/ni-plus";
 import NiEyeOpen from "@/icons/nexture/ni-eye-open";
 import NiPen from "@/icons/nexture/ni-pen";
@@ -68,12 +68,11 @@ export default function PermissionsIndex() {
   const [selected, setSelected] = useState<readonly string[]>([]);
 
   const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("");
+  const [moduleFilter, setModuleFilter] = useState("");
 
   const headCells: HeadCell[] = [
-    { id: "name", label: t("Name"), numeric: false },
-    { id: "key", label: t("Key"), numeric: false },
-    { id: "category", label: t("Category"), numeric: false },
+    { id: "name", label: t("Permission Key"), numeric: false },
+    { id: "module", label: t("Module"), numeric: false },
     { id: "description", label: t("Description"), numeric: false },
     { id: "actions", label: t("Actions"), numeric: false },
   ];
@@ -81,23 +80,41 @@ export default function PermissionsIndex() {
   const fetchPermissions = useCallback(async () => {
     setLoading(true);
     try {
-      const query: PermissionQuery = {
-        page: page + 1,
-        limit: rowsPerPage,
-        search: search,
-        category: category,
-      };
-      const response = await PermissionService.getPermissions(query);
+      const response = await PermissionService.getPermissions();
       if (response.success) {
-        setPermissions(Array.isArray(response.data) ? response.data : []);
-        setTotalCount(response.pagination?.total || 0);
+        const allPermissions = (Array.isArray(response.data) ? response.data : []).map((permission) => ({
+          ...permission,
+          ...normalizePermissionRecord(permission),
+        }));
+        const normalizedSearch = search.trim().toLowerCase();
+        const normalizedModule = moduleFilter.trim().toLowerCase();
+
+        const filteredPermissions = allPermissions.filter((permission) => {
+          const matchesSearch = !normalizedSearch
+            || permission.name?.toLowerCase().includes(normalizedSearch)
+            || permission.description?.toLowerCase().includes(normalizedSearch);
+          const matchesModule = !normalizedModule || permission.module?.toLowerCase().includes(normalizedModule);
+          return matchesSearch && matchesModule;
+        });
+
+        const sortedPermissions = [...filteredPermissions].sort((left, right) => {
+          const leftValue = String(left[orderBy] || "");
+          const rightValue = String(right[orderBy] || "");
+          return order === "asc" ? leftValue.localeCompare(rightValue) : rightValue.localeCompare(leftValue);
+        });
+
+        const start = page * rowsPerPage;
+        const end = start + rowsPerPage;
+
+        setPermissions(sortedPermissions.slice(start, end));
+        setTotalCount(sortedPermissions.length);
       }
     } catch (error) {
       console.error("Failed to fetch permissions", error);
     } finally {
       setLoading(false);
     }
-  }, [page, rowsPerPage, search, category]);
+  }, [moduleFilter, order, orderBy, page, rowsPerPage, search]);
 
   useEffect(() => {
     fetchPermissions();
@@ -190,8 +207,9 @@ export default function PermissionsIndex() {
             />
           </Grid>
           <Grid size={{ xs: 12, md: 3 }}>
-            <TextField fullWidth size="small" placeholder={t("Search by category...")}
-              value={category} onChange={(e) => setCategory(e.target.value)}
+            <TextField fullWidth size="small" placeholder={t("Search by module...")}
+              value={moduleFilter} onChange={(e) => setModuleFilter(e.target.value)}
+              label={t("Module")}
             />
           </Grid>
         </Grid>
@@ -229,6 +247,7 @@ export default function PermissionsIndex() {
                 const id = permission._id as string;
                 const isItemSelected = isSelected(id);
                 const labelId = `permission-checkbox-${index}`;
+                const normalized = normalizePermissionRecord(permission);
 
                 return (
                   <TableRow hover role="checkbox" aria-checked={isItemSelected} tabIndex={-1} key={id} selected={isItemSelected}
@@ -236,13 +255,13 @@ export default function PermissionsIndex() {
                     <TableCell sx={{ ...cellSx, width: 48, pr: 0 }} onClick={() => handleClick(id)}>
                       <Checkbox color="primary" checked={isItemSelected} icon={<CheckboxSmallEmptyOutlined />} checkedIcon={<CheckboxSmallChecked />} indeterminateIcon={<CheckboxSmallIndeterminate />} />
                     </TableCell>
-                    <TableCell component="th" id={labelId} scope="row" sx={{ ...cellSx, fontWeight: 500 }} onClick={() => navigate(`/${role}/permissions/view/${id}`)}>{permission.name}</TableCell>
+                    <TableCell component="th" id={labelId} scope="row" sx={{ ...cellSx, fontWeight: 500 }} onClick={() => navigate(`/${role}/permissions/view/${id}`)}>{normalized.name}</TableCell>
                     <TableCell sx={cellSx} onClick={() => navigate(`/${role}/permissions/view/${id}`)}>
-                      <Chip label={permission.key} size="small" color="info" variant="outlined" />
+                      <Chip label={normalized.key} size="small" color="info" variant="outlined" />
                     </TableCell>
-                    <TableCell sx={cellSx} onClick={() => navigate(`/${role}/permissions/view/${id}`)}>{permission.category || "-"}</TableCell>
-                    <TableCell sx={cellSx} onClick={() => navigate(`/${role}/permissions/view/${id}`)} sx={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {permission.description || "-"}
+                    <TableCell sx={cellSx} onClick={() => navigate(`/${role}/permissions/view/${id}`)}>{normalized.module || "-"}</TableCell>
+                    <TableCell sx={{ ...cellSx, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} onClick={() => navigate(`/${role}/permissions/view/${id}`)}>
+                      {normalized.description || "-"}
                     </TableCell>
                     <TableCell align="right" sx={cellSx}>
                       <Box className="flex justify-end gap-1">
