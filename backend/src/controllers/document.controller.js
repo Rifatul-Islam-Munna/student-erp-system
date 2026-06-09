@@ -184,6 +184,11 @@ const buildPrintHtml = ({ template, content, title }) => {
         max-width: 100%;
       }
 
+      .ql-editor {
+        position: relative;
+        min-height: 100%;
+      }
+
       p {
         margin: 0 0 12px;
         line-height: 1.65;

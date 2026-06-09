@@ -205,7 +205,17 @@ export default function DocumentView() {
               </Box>
             ) : (
               <Box className="mx-auto rounded-[14px] border border-slate-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.16)]" sx={paperStyle}>
-                <Box className="ql-editor" dangerouslySetInnerHTML={{ __html: document.templateContent || "<p></p>" }} />
+                <Box
+                  className="ql-editor"
+                  sx={{
+                    position: "relative",
+                    minHeight: "100%",
+                    "& .document-shape-embed": {
+                      pointerEvents: "auto",
+                    },
+                  }}
+                  dangerouslySetInnerHTML={{ __html: document.templateContent || "<p></p>" }}
+                />
               </Box>
             )}
           </Paper>

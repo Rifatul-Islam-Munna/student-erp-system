@@ -1,7 +1,7 @@
 import "react-quill-new/dist/quill.snow.css";
 
 import Icons from "quill/ui/icons";
-import { MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import ReactDOMServer from "react-dom/server";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -27,7 +27,6 @@ import {
   IconButton,
   InputAdornment,
   MenuItem,
-  Slider,
   Switch,
   TextField,
   Typography,
@@ -41,6 +40,7 @@ import {
   SYSTEM_DOCUMENT_VARIABLES,
 } from "@/constants/documentVariables";
 import NiArrowLeft from "@/icons/nexture/ni-arrow-left";
+import NiBinEmpty from "@/icons/nexture/ni-bin-empty";
 import NiBrackets from "@/icons/nexture/ni-brackets";
 import NiClipboard from "@/icons/nexture/ni-clipboard";
 import NiCode from "@/icons/nexture/ni-code";
@@ -63,9 +63,13 @@ import NiMenuLeft from "@/icons/nexture/ni-menu-left";
 import NiMenuRight from "@/icons/nexture/ni-menu-right";
 import NiPaintBucket from "@/icons/nexture/ni-paint-bucket";
 import NiPaintRoller from "@/icons/nexture/ni-paint-roller";
+import NiRefresh from "@/icons/nexture/ni-refresh";
 import NiScriptSub from "@/icons/nexture/ni-script-sub";
 import NiScriptSuper from "@/icons/nexture/ni-script-super";
 import NiSearch from "@/icons/nexture/ni-search";
+import NiSquare from "@/icons/nexture/ni-square";
+import NiCircle from "@/icons/nexture/ni-circle";
+import NiMinusSquare from "@/icons/nexture/ni-minus-square";
 import NiTextBold from "@/icons/nexture/ni-text-bold";
 import NiTextCenter from "@/icons/nexture/ni-text-center";
 import NiTextItalic from "@/icons/nexture/ni-text-italic";
@@ -100,9 +104,23 @@ const DOCUMENT_STATUSES = [
 const PAGE_PRESETS = ["A4", "A3", "Letter", "Legal", "Custom"] as const;
 const PAGE_ORIENTATIONS = ["portrait", "landscape"] as const;
 const IMAGE_FORMAT_ATTRIBUTES = ["width", "height", "style", "data-position-mode", "data-x", "data-y", "data-opacity"] as const;
+const FONT_SIZE_OPTIONS = ["10px", "12px", "14px", "16px", "18px", "20px", "24px", "28px", "32px", "40px"] as const;
+const FONT_FAMILY_OPTIONS = [
+  { value: "Arial", label: "Arial" },
+  { value: "Times New Roman", label: "Times New Roman" },
+  { value: "Georgia", label: "Georgia" },
+  { value: "Verdana", label: "Verdana" },
+  { value: "Courier New", label: "Courier New" },
+] as const;
+const SHAPE_TYPES = ["square", "rectangle", "circle", "line"] as const;
+const SHAPE_BORDER_STYLES = ["solid", "dotted", "dashed"] as const;
 
 const BaseImageFormat = Quill.import("formats/image");
+const SizeStyle = Quill.import("attributors/style/size");
+const FontStyle = Quill.import("attributors/style/font");
+const BlockEmbed = Quill.import("blots/block/embed");
 let imageBlotRegistered = false;
+let editorFormatsRegistered = false;
 
 const extractVariables = (content: string) =>
   Array.from(new Set((content.match(/\{\{[^}]+\}\}/g) || []).map((item) => item.trim())));
@@ -136,6 +154,115 @@ const preparePayload = (values: Partial<DocumentTemplate>) => ({
   pageSettings: normalizePageSettings(values.pageSettings),
 });
 
+type ShapeType = (typeof SHAPE_TYPES)[number];
+type ShapeBorderStyle = (typeof SHAPE_BORDER_STYLES)[number];
+
+type DocumentShapeValue = {
+  shape: ShapeType;
+  width: number;
+  height: number;
+  x: number;
+  y: number;
+  rotation: number;
+  borderWidth: number;
+  borderColor: string;
+  fillColor: string;
+  borderStyle: ShapeBorderStyle;
+  opacity: number;
+};
+
+const getLineDashArray = (borderStyle: ShapeBorderStyle, borderWidth: number) => {
+  if (borderStyle === "dotted") return `${Math.max(1, borderWidth)} ${Math.max(2, borderWidth * 2)}`;
+  if (borderStyle === "dashed") return `${Math.max(4, borderWidth * 4)} ${Math.max(3, borderWidth * 2)}`;
+  return "";
+};
+
+const buildShapeMarkup = (shapeState: DocumentShapeValue) => {
+  if (shapeState.shape !== "line") return "";
+
+  const width = Math.max(20, shapeState.width);
+  const height = Math.max(20, shapeState.height);
+  const strokeWidth = Math.max(1, shapeState.borderWidth);
+  const dashArray = getLineDashArray(shapeState.borderStyle, strokeWidth);
+  const centerY = height / 2;
+
+  return `
+    <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" style="display:block;overflow:visible;pointer-events:none">
+      <line
+        x1="0"
+        y1="${centerY}"
+        x2="${width}"
+        y2="${centerY}"
+        stroke="${shapeState.borderColor}"
+        stroke-width="${strokeWidth}"
+        ${dashArray ? `stroke-dasharray="${dashArray}"` : ""}
+        stroke-linecap="${shapeState.borderStyle === "dotted" ? "round" : "square"}"
+      />
+    </svg>
+  `.trim();
+};
+
+const buildShapeStyle = (shapeState: DocumentShapeValue) =>
+  [
+    "display:block",
+    "box-sizing:border-box",
+    `background:${shapeState.shape === "line" ? "transparent" : shapeState.fillColor || "transparent"}`,
+    "pointer-events:auto",
+    "content:normal",
+    "position:absolute",
+    `left:${shapeState.x}px`,
+    `top:${shapeState.y}px`,
+    `width:${Math.max(20, shapeState.width)}px`,
+    `height:${Math.max(20, shapeState.height)}px`,
+    `opacity:${Math.max(0.05, Math.min(1, shapeState.opacity))}`,
+    `border:${shapeState.shape === "line" ? "none" : `${Math.max(1, shapeState.borderWidth)}px ${shapeState.borderStyle} ${shapeState.borderColor || "#111827"}`}`,
+    `border-radius:${shapeState.shape === "circle" ? "999px" : "0px"}`,
+    `transform:rotate(${shapeState.rotation}deg)`,
+    "transform-origin:center center",
+    "z-index:3",
+    `overflow:${shapeState.shape === "line" ? "visible" : "hidden"}`,
+  ].join(";");
+
+const normalizeShapeState = (shapeState?: Partial<DocumentShapeValue>): DocumentShapeValue => ({
+  shape: SHAPE_TYPES.includes(shapeState?.shape as ShapeType) ? (shapeState?.shape as ShapeType) : "square",
+  width: Math.max(20, Number(shapeState?.width) || 160),
+  height: Math.max(20, Number(shapeState?.height) || (shapeState?.shape === "square" ? Number(shapeState?.width) || 160 : shapeState?.shape === "line" ? 24 : 120)),
+  x: Number(shapeState?.x) || 24,
+  y: Number(shapeState?.y) || 24,
+  rotation: Number.isFinite(Number(shapeState?.rotation)) ? Number(shapeState?.rotation) : 0,
+  borderWidth: Math.max(1, Number(shapeState?.borderWidth) || 2),
+  borderColor: shapeState?.borderColor || "#111827",
+  fillColor: shapeState?.fillColor || "transparent",
+  borderStyle: SHAPE_BORDER_STYLES.includes(shapeState?.borderStyle as ShapeBorderStyle)
+    ? (shapeState?.borderStyle as ShapeBorderStyle)
+    : "solid",
+  opacity: Math.max(0.05, Math.min(1, Number(shapeState?.opacity) || 1)),
+});
+
+const ensureEditorRootMinHeight = (editorRoot: HTMLElement) => {
+  const images = Array.from(editorRoot.querySelectorAll("img"));
+  const shapes = Array.from(editorRoot.querySelectorAll(".document-shape-embed"));
+
+  const bottomValues = [
+    editorRoot.scrollHeight,
+    ...images.map((node) => {
+      const image = node as HTMLImageElement;
+      const y = parseInt(image.getAttribute("data-y") || image.style.top || "0", 10) || 0;
+      const height = image.clientHeight || parseInt(image.getAttribute("height") || "0", 10) || 120;
+      return y + height + 80;
+    }),
+    ...shapes.map((node) => {
+      const shape = node as HTMLElement;
+      const y = parseInt(shape.getAttribute("data-y") || shape.style.top || "0", 10) || 0;
+      const height = parseInt(shape.getAttribute("data-height") || shape.style.height || "0", 10) || 120;
+      const width = parseInt(shape.getAttribute("data-width") || shape.style.width || "0", 10) || 120;
+      return y + Math.max(width, height) + 80;
+    }),
+  ];
+
+  editorRoot.style.minHeight = `${Math.max(720, ...bottomValues)}px`;
+};
+
 const registerDocumentImageFormat = () => {
   if (imageBlotRegistered) return;
 
@@ -168,7 +295,63 @@ const registerDocumentImageFormat = () => {
   imageBlotRegistered = true;
 };
 
+const registerEditorFormats = () => {
+  if (editorFormatsRegistered) return;
+
+  SizeStyle.whitelist = [...FONT_SIZE_OPTIONS];
+  FontStyle.whitelist = [...FONT_FAMILY_OPTIONS.map((font) => font.value)];
+  Quill.register(SizeStyle, true);
+  Quill.register(FontStyle, true);
+
+  class DocumentShapeBlot extends BlockEmbed {
+    static blotName = "document-shape";
+    static tagName = "div";
+    static className = "document-shape-embed";
+
+    static create(value?: Partial<DocumentShapeValue>) {
+      const node = super.create() as HTMLElement;
+      const shapeState = normalizeShapeState(value);
+
+      node.setAttribute("contenteditable", "false");
+      node.setAttribute("data-shape", shapeState.shape);
+      node.setAttribute("data-width", String(shapeState.width));
+      node.setAttribute("data-height", String(shapeState.height));
+      node.setAttribute("data-x", String(shapeState.x));
+      node.setAttribute("data-y", String(shapeState.y));
+      node.setAttribute("data-rotation", String(shapeState.rotation));
+      node.setAttribute("data-border-width", String(shapeState.borderWidth));
+      node.setAttribute("data-border-color", shapeState.borderColor);
+      node.setAttribute("data-fill-color", shapeState.fillColor);
+      node.setAttribute("data-border-style", shapeState.borderStyle);
+      node.setAttribute("data-opacity", String(shapeState.opacity));
+      node.setAttribute("style", buildShapeStyle(shapeState));
+      node.innerHTML = buildShapeMarkup(shapeState);
+      return node;
+    }
+
+    static value(domNode: HTMLElement): DocumentShapeValue {
+      return normalizeShapeState({
+        shape: domNode.getAttribute("data-shape") as ShapeType,
+        width: Number(domNode.getAttribute("data-width")),
+        height: Number(domNode.getAttribute("data-height")),
+        x: Number(domNode.getAttribute("data-x")),
+        y: Number(domNode.getAttribute("data-y")),
+        rotation: Number(domNode.getAttribute("data-rotation")),
+        borderWidth: Number(domNode.getAttribute("data-border-width")),
+        borderColor: domNode.getAttribute("data-border-color") || "#111827",
+        fillColor: domNode.getAttribute("data-fill-color") || "transparent",
+        borderStyle: domNode.getAttribute("data-border-style") as ShapeBorderStyle,
+        opacity: Number(domNode.getAttribute("data-opacity")),
+      });
+    }
+  }
+
+  Quill.register(DocumentShapeBlot, true);
+  editorFormatsRegistered = true;
+};
+
 registerDocumentImageFormat();
+registerEditorFormats();
 
 const setupEditorIcons = () => {
   Icons["bold"] = ReactDOMServer.renderToString(<NiTextBold />);
@@ -227,7 +410,6 @@ const buildImageStyle = (imageState: SelectedImageState) =>
 
 const TOOLBAR_TITLES: Record<string, string> = {
   "ql-header": "Heading",
-  "ql-size": "Text Size",
   "ql-align": "Alignment",
   "ql-bold": "Bold",
   "ql-italic": "Italic",
@@ -267,6 +449,48 @@ type SelectedImageFrame = {
   height: number;
 };
 
+type SelectedShapeState = DocumentShapeValue & {
+  index: number;
+};
+
+type SelectedShapeFrame = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+type UploadedFontOption = {
+  family: string;
+  label: string;
+  source: string;
+};
+
+type EditorSelectionRange = {
+  index: number;
+  length: number;
+};
+
+const FONT_UPLOAD_ACCEPT = ".ttf,.otf,.woff,.woff2";
+
+const getAngleFromCenter = (centerX: number, centerY: number, clientX: number, clientY: number) =>
+  (Math.atan2(clientY - centerY, clientX - centerX) * 180) / Math.PI;
+
+const getFontSizeSelectValue = (fontSizePx: string) => {
+  const value = `${Math.max(8, Number(fontSizePx) || 16)}px`;
+  return FONT_SIZE_OPTIONS.includes(value as (typeof FONT_SIZE_OPTIONS)[number]) ? value : "custom";
+};
+
+const normalizeFontFamilyValue = (value?: string) => (value || "").replace(/^['"]|['"]$/g, "");
+const normalizeFontUploadName = (value: string) => value.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9 -]/g, "").trim() || "Custom Font";
+const readFileAsDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Failed to read font file"));
+    reader.readAsDataURL(file);
+  });
+
 export default function DocumentUpsert() {
   const { t } = useTranslation();
   const theme = useTheme();
@@ -282,10 +506,22 @@ export default function DocumentUpsert() {
   const [variableDialogOpen, setVariableDialogOpen] = useState(false);
   const [paperDialogOpen, setPaperDialogOpen] = useState(false);
   const [imageDialogOpen, setImageDialogOpen] = useState(false);
+  const [shapeDialogOpen, setShapeDialogOpen] = useState(false);
   const [selectedImage, setSelectedImage] = useState<SelectedImageState | null>(null);
   const [selectedImageFrame, setSelectedImageFrame] = useState<SelectedImageFrame | null>(null);
+  const [selectedShape, setSelectedShape] = useState<SelectedShapeState | null>(null);
+  const [selectedShapeFrame, setSelectedShapeFrame] = useState<SelectedShapeFrame | null>(null);
+  const [fontSizePx, setFontSizePx] = useState("16");
+  const [fontFamily, setFontFamily] = useState("Arial");
+  const [uploadedFonts, setUploadedFonts] = useState<UploadedFontOption[]>([]);
+  const [canvasZoom, setCanvasZoom] = useState(1);
+  const [fitZoom, setFitZoom] = useState(1);
   const quillRef = useRef<ReactQuill | null>(null);
+  const savedSelectionRef = useRef<EditorSelectionRange | null>(null);
+  const fontUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const toolbarHostRef = useRef<HTMLDivElement | null>(null);
   const pageCanvasRef = useRef<HTMLDivElement | null>(null);
+  const previewViewportRef = useRef<HTMLDivElement | null>(null);
   const dragImageRef = useRef<
     | {
         mode: "drag" | "resize";
@@ -298,16 +534,37 @@ export default function DocumentUpsert() {
       }
     | null
   >(null);
+  const dragShapeRef = useRef<
+    | {
+        mode: "drag" | "resize" | "rotate";
+        index: number;
+        startX: number;
+        startY: number;
+        originX: number;
+        originY: number;
+        originWidth: number;
+        originHeight: number;
+        originRotation: number;
+        originAngle: number;
+      }
+    | null
+  >(null);
 
   useEffect(() => {
     registerDocumentImageFormat();
+    registerEditorFormats();
     setupEditorIcons();
   }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      const toolbar = document.querySelector(".document-editor .ql-toolbar");
+      const host = toolbarHostRef.current;
+      const toolbar = document.querySelector(".document-editor .ql-toolbar") || host?.querySelector(".ql-toolbar");
       if (!toolbar) return;
+
+      if (host && toolbar.parentElement !== host) {
+        host.appendChild(toolbar);
+      }
 
       Object.entries(TOOLBAR_TITLES).forEach(([className, title]) => {
         toolbar.querySelectorAll(`.${className}`).forEach((element) => {
@@ -326,11 +583,52 @@ export default function DocumentUpsert() {
     formik.setFieldValue("templateContent", editor.root.innerHTML);
   };
 
+  const syncActiveFontSize = () => {
+    const editor = quillRef.current?.getEditor();
+    if (!editor) return;
+    const range = editor.getSelection() || savedSelectionRef.current;
+    const formats = range ? editor.getFormat(range) : editor.getFormat();
+    const sizeValue = typeof formats.size === "string" ? formats.size : "16px";
+    const nextFontFamily = typeof formats.font === "string" ? normalizeFontFamilyValue(formats.font) : "Arial";
+    const parsed = parseInt(sizeValue, 10);
+    setFontSizePx(String(Number.isNaN(parsed) ? 16 : parsed));
+    setFontFamily(nextFontFamily || "Arial");
+  };
+
+  const applyInlineFormat = (format: "size" | "font", value: string) => {
+    const editor = quillRef.current?.getEditor();
+    if (!editor) return;
+
+    const range = editor.getSelection() || savedSelectionRef.current;
+    editor.focus();
+
+    if (range) {
+      editor.setSelection(range.index, range.length, "silent");
+      if (range.length > 0) {
+        editor.formatText(range.index, range.length, format, value, "user");
+      } else {
+        editor.format(format, value, "user");
+      }
+      savedSelectionRef.current = range;
+    } else {
+      editor.format(format, value, "user");
+    }
+
+    syncEditorHtmlToForm();
+  };
+
   const getImageElement = (imageState?: SelectedImageState | null) => {
     const editor = quillRef.current?.getEditor();
     if (!editor || !imageState) return null;
     const images = Array.from(editor.root.querySelectorAll("img"));
     return (images[imageState.index] as HTMLImageElement | undefined) || null;
+  };
+
+  const getShapeElement = (shapeState?: SelectedShapeState | null) => {
+    const editor = quillRef.current?.getEditor();
+    if (!editor || !shapeState) return null;
+    const shapes = Array.from(editor.root.querySelectorAll(".document-shape-embed"));
+    return (shapes[shapeState.index] as HTMLDivElement | undefined) || null;
   };
 
   const updateSelectedImageFrame = (imageState?: SelectedImageState | null) => {
@@ -349,6 +647,25 @@ export default function DocumentUpsert() {
       top: imageRect.top - pageRect.top,
       width: imageRect.width,
       height: imageRect.height,
+    });
+  };
+
+  const updateSelectedShapeFrame = (shapeState?: SelectedShapeState | null) => {
+    const shape = getShapeElement(shapeState || selectedShape);
+    const page = pageCanvasRef.current;
+    if (!shape || !page) {
+      setSelectedShapeFrame(null);
+      return;
+    }
+
+    const shapeRect = shape.getBoundingClientRect();
+    const pageRect = page.getBoundingClientRect();
+
+    setSelectedShapeFrame({
+      left: shapeRect.left - pageRect.left,
+      top: shapeRect.top - pageRect.top,
+      width: shapeRect.width,
+      height: shapeRect.height,
     });
   };
 
@@ -407,11 +724,102 @@ export default function DocumentUpsert() {
     }
 
     editor.root.style.position = "relative";
-    editor.root.style.minHeight = `${Math.max(editor.root.scrollHeight, nextState.y + (image.height || 120) + 80, 720)}px`;
+    ensureEditorRootMinHeight(editor.root);
 
     setSelectedImage({ ...nextState });
     window.requestAnimationFrame(() => updateSelectedImageFrame(nextState));
     syncEditorHtmlToForm();
+  };
+
+  const readShapeState = (shapeNode: HTMLElement): SelectedShapeState => {
+    const editor = quillRef.current?.getEditor();
+    const shapes = editor ? Array.from(editor.root.querySelectorAll(".document-shape-embed")) : [];
+    const index = shapes.indexOf(shapeNode);
+    const shapeState = normalizeShapeState({
+      shape: shapeNode.getAttribute("data-shape") as ShapeType,
+      width: Number(shapeNode.getAttribute("data-width")),
+      height: Number(shapeNode.getAttribute("data-height")),
+      x: Number(shapeNode.getAttribute("data-x")),
+      y: Number(shapeNode.getAttribute("data-y")),
+      rotation: Number(shapeNode.getAttribute("data-rotation")),
+      borderWidth: Number(shapeNode.getAttribute("data-border-width")),
+      borderColor: shapeNode.getAttribute("data-border-color") || "#111827",
+      fillColor: shapeNode.getAttribute("data-fill-color") || "transparent",
+      borderStyle: shapeNode.getAttribute("data-border-style") as ShapeBorderStyle,
+      opacity: Number(shapeNode.getAttribute("data-opacity")),
+    });
+
+    return {
+      index,
+      ...shapeState,
+    };
+  };
+
+  const applyShapeState = (nextState: SelectedShapeState) => {
+    const editor = quillRef.current?.getEditor();
+    if (!editor) return;
+    const shapes = Array.from(editor.root.querySelectorAll(".document-shape-embed"));
+    const shape = shapes[nextState.index] as HTMLElement | undefined;
+    if (!shape) {
+      setSelectedShape(null);
+      setSelectedShapeFrame(null);
+      return;
+    }
+
+    const safeState = normalizeShapeState(nextState);
+    shape.setAttribute("data-shape", safeState.shape);
+    shape.setAttribute("data-width", String(safeState.width));
+    shape.setAttribute("data-height", String(safeState.height));
+    shape.setAttribute("data-x", String(safeState.x));
+    shape.setAttribute("data-y", String(safeState.y));
+    shape.setAttribute("data-rotation", String(safeState.rotation));
+    shape.setAttribute("data-border-width", String(safeState.borderWidth));
+    shape.setAttribute("data-border-color", safeState.borderColor);
+    shape.setAttribute("data-fill-color", safeState.fillColor);
+    shape.setAttribute("data-border-style", safeState.borderStyle);
+    shape.setAttribute("data-opacity", String(safeState.opacity));
+    shape.setAttribute("style", buildShapeStyle(safeState));
+    shape.innerHTML = buildShapeMarkup(safeState);
+
+    editor.root.style.position = "relative";
+    ensureEditorRootMinHeight(editor.root);
+
+    const selectedState = { index: nextState.index, ...safeState };
+    setSelectedShape(selectedState);
+    window.requestAnimationFrame(() => updateSelectedShapeFrame(selectedState));
+    syncEditorHtmlToForm();
+  };
+
+  const removeSelectedImage = () => {
+    const editor = quillRef.current?.getEditor();
+    const image = getImageElement(selectedImage);
+    if (!editor || !image) return;
+
+    const blot = Quill.find(image);
+    if (!blot) return;
+
+    const index = editor.getIndex(blot);
+    editor.deleteText(index, 1, "user");
+    setSelectedImage(null);
+    setSelectedImageFrame(null);
+    syncEditorHtmlToForm();
+    ensureEditorRootMinHeight(editor.root);
+  };
+
+  const removeSelectedShape = () => {
+    const editor = quillRef.current?.getEditor();
+    const shape = getShapeElement(selectedShape);
+    if (!editor || !shape) return;
+
+    const blot = Quill.find(shape);
+    if (!blot) return;
+
+    const index = editor.getIndex(blot);
+    editor.deleteText(index, 1, "user");
+    setSelectedShape(null);
+    setSelectedShapeFrame(null);
+    syncEditorHtmlToForm();
+    ensureEditorRootMinHeight(editor.root);
   };
 
   const formik = useFormik<Partial<DocumentTemplate>>({
@@ -444,6 +852,20 @@ export default function DocumentUpsert() {
       }
     },
   });
+
+  const pageSettings = normalizePageSettings(formik.values.pageSettings);
+  const usedVariables = extractVariables(formik.values.templateContent || "");
+  const currentCanvasZoom = Math.max(0.35, Math.min(1.5, canvasZoom));
+  const availableFonts = useMemo(
+    () => [
+      ...FONT_FAMILY_OPTIONS,
+      ...uploadedFonts.map((font) => ({
+        value: font.family,
+        label: font.label,
+      })),
+    ],
+    [uploadedFonts],
+  );
 
   useEffect(() => {
     if (!isEdit || !id) return;
@@ -486,6 +908,7 @@ export default function DocumentUpsert() {
     const root = editor.root;
 
     root.style.position = "relative";
+    ensureEditorRootMinHeight(root);
 
     const handleClick = (event: Event) => {
       const target = event.target as HTMLElement | null;
@@ -493,21 +916,54 @@ export default function DocumentUpsert() {
       if (target.tagName === "IMG") {
         const nextState = readImageState(target as HTMLImageElement);
         setSelectedImage(nextState);
+        setSelectedShape(null);
+        setSelectedShapeFrame(null);
         window.requestAnimationFrame(() => updateSelectedImageFrame(nextState));
+        return;
+      }
+      const shapeNode = target.closest(".document-shape-embed") as HTMLElement | null;
+      if (shapeNode) {
+        const nextState = readShapeState(shapeNode);
+        setSelectedShape(nextState);
+        setSelectedImage(null);
+        setSelectedImageFrame(null);
+        window.requestAnimationFrame(() => updateSelectedShapeFrame(nextState));
         return;
       }
       if (!target.closest("img")) {
         setSelectedImage(null);
         setSelectedImageFrame(null);
       }
+      if (!target.closest(".document-shape-embed")) {
+        setSelectedShape(null);
+        setSelectedShapeFrame(null);
+      }
     };
 
     const handleMouseDown = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null;
-      if (!target || target.tagName !== "IMG") return;
-      const state = readImageState(target as HTMLImageElement);
-      if (state.positionMode !== "absolute") return;
-      dragImageRef.current = {
+      if (!target) return;
+      if (target.tagName === "IMG") {
+        const state = readImageState(target as HTMLImageElement);
+        if (state.positionMode !== "absolute") return;
+        dragImageRef.current = {
+          mode: "drag",
+          index: state.index,
+          startX: event.clientX,
+          startY: event.clientY,
+          originX: state.x,
+          originY: state.y,
+          originWidth: state.width,
+        };
+        (target as HTMLImageElement).style.cursor = "grabbing";
+        event.preventDefault();
+        return;
+      }
+
+      const shapeNode = target.closest(".document-shape-embed") as HTMLElement | null;
+      if (!shapeNode) return;
+      const state = readShapeState(shapeNode);
+      dragShapeRef.current = {
         mode: "drag",
         index: state.index,
         startX: event.clientX,
@@ -515,8 +971,11 @@ export default function DocumentUpsert() {
         originX: state.x,
         originY: state.y,
         originWidth: state.width,
+        originHeight: state.height,
+        originRotation: state.rotation,
+        originAngle: 0,
       };
-      (target as HTMLImageElement).style.cursor = "grabbing";
+      shapeNode.style.cursor = "grabbing";
       event.preventDefault();
     };
 
@@ -538,26 +997,88 @@ export default function DocumentUpsert() {
       }));
     };
 
+    const handleShapeMouseMove = (event: MouseEvent) => {
+      if (!dragShapeRef.current) return;
+      if (dragShapeRef.current.mode === "rotate") {
+        const shapes = Array.from(root.querySelectorAll(".document-shape-embed"));
+        const shape = shapes[dragShapeRef.current.index] as HTMLElement | undefined;
+        if (!shape) return;
+        const rect = shape.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        const currentAngle = getAngleFromCenter(centerX, centerY, event.clientX, event.clientY);
+
+        updateShapeFromIndex(dragShapeRef.current.index, (currentState) => ({
+          ...currentState,
+          rotation: Math.round(dragShapeRef.current!.originRotation + (currentAngle - dragShapeRef.current!.originAngle)),
+        }));
+        return;
+      }
+      if (dragShapeRef.current.mode === "resize") {
+        updateShapeFromIndex(dragShapeRef.current.index, (currentState) => ({
+          ...currentState,
+          width: Math.max(20, dragShapeRef.current!.originWidth + (event.clientX - dragShapeRef.current!.startX)),
+          height: currentState.shape === "line"
+            ? dragShapeRef.current!.originHeight
+            : Math.max(20, dragShapeRef.current!.originHeight + (event.clientY - dragShapeRef.current!.startY)),
+        }));
+        return;
+      }
+
+      updateShapeFromIndex(dragShapeRef.current.index, (currentState) => ({
+        ...currentState,
+        x: dragShapeRef.current!.originX + (event.clientX - dragShapeRef.current!.startX),
+        y: dragShapeRef.current!.originY + (event.clientY - dragShapeRef.current!.startY),
+      }));
+    };
+
     const handleMouseUp = () => {
       Array.from(root.querySelectorAll("img")).forEach((imageNode) => {
         const image = imageNode as HTMLImageElement;
         if (image.dataset.positionMode === "absolute") image.style.cursor = "grab";
       });
+      Array.from(root.querySelectorAll(".document-shape-embed")).forEach((shapeNode) => {
+        (shapeNode as HTMLElement).style.cursor = "grab";
+      });
       dragImageRef.current = null;
+      dragShapeRef.current = null;
     };
 
     root.addEventListener("click", handleClick);
     root.addEventListener("mousedown", handleMouseDown);
     window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mousemove", handleShapeMouseMove);
     window.addEventListener("mouseup", handleMouseUp);
 
     return () => {
       root.removeEventListener("click", handleClick);
       root.removeEventListener("mousedown", handleMouseDown);
       window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mousemove", handleShapeMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
   }, [isBuilderStep]);
+
+  useEffect(() => {
+    if (!isBuilderStep) return;
+
+    const updateFitZoom = () => {
+      const viewport = previewViewportRef.current;
+      const page = pageCanvasRef.current;
+      if (!viewport || !page) return;
+
+      const pageWidth = page.offsetWidth || 1;
+      const pageHeight = page.offsetHeight || 1;
+      const widthZoom = (viewport.clientWidth - 24) / pageWidth;
+      const heightZoom = (viewport.clientHeight - 24) / pageHeight;
+      const nextFitZoom = Math.max(0.35, Math.min(1, widthZoom, heightZoom));
+      setFitZoom(nextFitZoom);
+    };
+
+    updateFitZoom();
+    window.addEventListener("resize", updateFitZoom);
+    return () => window.removeEventListener("resize", updateFitZoom);
+  }, [isBuilderStep, pageSettings.widthMm, pageSettings.heightMm, pageSettings.marginTopMm, pageSettings.marginRightMm, pageSettings.marginBottomMm, pageSettings.marginLeftMm, formik.values.templateContent]);
 
   useEffect(() => {
     if (!selectedImage) return;
@@ -575,6 +1096,77 @@ export default function DocumentUpsert() {
     };
   }, [selectedImage]);
 
+  useEffect(() => {
+    if (!selectedShape) return;
+
+    const handleWindowChange = () => updateSelectedShapeFrame(selectedShape);
+
+    window.addEventListener("resize", handleWindowChange);
+    window.addEventListener("scroll", handleWindowChange, true);
+
+    window.requestAnimationFrame(() => updateSelectedShapeFrame(selectedShape));
+
+    return () => {
+      window.removeEventListener("resize", handleWindowChange);
+      window.removeEventListener("scroll", handleWindowChange, true);
+    };
+  }, [selectedShape]);
+
+  useEffect(() => {
+    if (!isBuilderStep) return;
+    const editor = quillRef.current?.getEditor();
+    if (!editor) return;
+
+    const handleSelectionChange = (range: EditorSelectionRange | null) => {
+      if (range) {
+        savedSelectionRef.current = range;
+      }
+      syncActiveFontSize();
+    };
+    const handleTextChange = () => syncActiveFontSize();
+
+    editor.on("selection-change", handleSelectionChange);
+    editor.on("text-change", handleTextChange);
+    syncActiveFontSize();
+
+    return () => {
+      editor.off("selection-change", handleSelectionChange);
+      editor.off("text-change", handleTextChange);
+    };
+  }, [isBuilderStep]);
+
+  useEffect(() => {
+    const styleId = "document-builder-uploaded-fonts";
+    const existingNode = document.getElementById(styleId) as HTMLStyleElement | null;
+    FontStyle.whitelist = availableFonts.map((font) => font.value);
+
+    if (!uploadedFonts.length) {
+      existingNode?.remove();
+      return;
+    }
+
+    const styleNode = existingNode || document.createElement("style");
+    styleNode.id = styleId;
+    styleNode.textContent = uploadedFonts
+      .map(
+        (font) => `
+          @font-face {
+            font-family: "${font.family}";
+            src: url("${font.source}");
+          }
+        `,
+      )
+      .join("\n");
+
+    if (!existingNode) {
+      document.head.appendChild(styleNode);
+    }
+
+    return () => {
+      if (!uploadedFonts.length) styleNode.remove();
+    };
+  }, [availableFonts, uploadedFonts]);
+
   const availableVariableGroups = useMemo(() => {
     const groups: Array<{ title: string; items: DocumentVariableDefinition[] }> = [
       { title: "System Variables", items: SYSTEM_DOCUMENT_VARIABLES },
@@ -589,9 +1181,6 @@ export default function DocumentUpsert() {
       items: group.items.filter((item) => item.templateVariable.toLowerCase().includes(variableSearch.trim().toLowerCase())),
     }));
   }, [formik.values.docType, variableSearch]);
-
-  const pageSettings = normalizePageSettings(formik.values.pageSettings);
-  const usedVariables = extractVariables(formik.values.templateContent || "");
 
   const handlePagePresetChange = (preset: DocumentPageSettings["preset"]) => {
     const orientation = formik.values.pageSettings?.orientation || DEFAULT_DOCUMENT_PAGE_SETTINGS.orientation;
@@ -648,13 +1237,98 @@ export default function DocumentUpsert() {
     await navigator.clipboard.writeText(variable);
   };
 
+  const applyFontSize = (value: string) => {
+    const px = Math.max(8, Number(value) || 16);
+    const normalized = `${px}px`;
+    setFontSizePx(String(px));
+    applyInlineFormat("size", normalized);
+  };
+
+  const applyFontFamily = (value: string) => {
+    const normalized = normalizeFontFamilyValue(value) || "Arial";
+    setFontFamily(normalized);
+    applyInlineFormat("font", normalized);
+  };
+
+  const handleFontUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    try {
+      const source = await readFileAsDataUrl(file);
+      const label = normalizeFontUploadName(file.name);
+      const family = `${label}-${Date.now()}`;
+      const nextFont = { family, label, source };
+
+      setUploadedFonts((current) => {
+        const withoutSameLabel = current.filter((font) => font.label !== label);
+        return [...withoutSameLabel, nextFont];
+      });
+
+      window.setTimeout(() => applyFontFamily(family), 0);
+    } catch (error) {
+      console.error("Failed to upload font", error);
+    }
+  };
+
+  const insertShape = (shape: ShapeType = "square") => {
+    const editor = quillRef.current?.getEditor();
+    if (!editor) return;
+    const range = editor.getSelection(true);
+    const index = range?.index ?? editor.getLength();
+    const defaultShape = normalizeShapeState({
+      shape,
+      width: shape === "square" ? 120 : shape === "line" ? 220 : 180,
+      height: shape === "line" ? 24 : 120,
+      x: 24,
+      y: 24,
+      rotation: 0,
+      borderStyle: "solid",
+      borderColor: "#111827",
+      fillColor: shape === "line" ? "transparent" : "transparent",
+      borderWidth: shape === "line" ? 3 : 2,
+      opacity: 1,
+    });
+
+    editor.insertEmbed(index, "document-shape", defaultShape, "user");
+    editor.insertText(index + 1, "\n", "user");
+    editor.setSelection(index + 2, 0, "user");
+    ensureEditorRootMinHeight(editor.root);
+    syncEditorHtmlToForm();
+
+    window.requestAnimationFrame(() => {
+      const shapes = Array.from(editor.root.querySelectorAll(".document-shape-embed"));
+      const shapeNode = shapes[shapes.length - 1] as HTMLElement | undefined;
+      if (!shapeNode) return;
+      const nextState = readShapeState(shapeNode);
+      setSelectedShape(nextState);
+      setSelectedImage(null);
+      setSelectedImageFrame(null);
+      updateSelectedShapeFrame(nextState);
+    });
+  };
+
   const handleEditorMouseDownCapture = (event: ReactMouseEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement | null;
-    if (!target || target.tagName !== "IMG") return;
+    if (!target) return;
 
-    const nextState = readImageState(target as HTMLImageElement);
-    setSelectedImage(nextState);
-    window.requestAnimationFrame(() => updateSelectedImageFrame(nextState));
+    if (target.tagName === "IMG") {
+      const nextState = readImageState(target as HTMLImageElement);
+      setSelectedImage(nextState);
+      setSelectedShape(null);
+      setSelectedShapeFrame(null);
+      window.requestAnimationFrame(() => updateSelectedImageFrame(nextState));
+      return;
+    }
+
+    const shapeNode = target.closest(".document-shape-embed") as HTMLElement | null;
+    if (!shapeNode) return;
+    const nextState = readShapeState(shapeNode);
+    setSelectedShape(nextState);
+    setSelectedImage(null);
+    setSelectedImageFrame(null);
+    window.requestAnimationFrame(() => updateSelectedShapeFrame(nextState));
   };
 
   const handleResizeStart = (event: ReactMouseEvent<HTMLDivElement>) => {
@@ -689,6 +1363,69 @@ export default function DocumentUpsert() {
     };
   };
 
+  const handleShapeResizeStart = (event: ReactMouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!selectedShape) return;
+
+    dragShapeRef.current = {
+      mode: "resize",
+      index: selectedShape.index,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: selectedShape.x,
+      originY: selectedShape.y,
+      originWidth: selectedShape.width,
+      originHeight: selectedShape.height,
+      originRotation: selectedShape.rotation,
+      originAngle: 0,
+    };
+  };
+
+  const handleShapeOverlayDragStart = (event: ReactMouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!selectedShape) return;
+
+    dragShapeRef.current = {
+      mode: "drag",
+      index: selectedShape.index,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: selectedShape.x,
+      originY: selectedShape.y,
+      originWidth: selectedShape.width,
+      originHeight: selectedShape.height,
+      originRotation: selectedShape.rotation,
+      originAngle: 0,
+    };
+  };
+
+  const handleShapeRotateStart = (event: ReactMouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!selectedShape) return;
+
+    const shape = getShapeElement(selectedShape);
+    if (!shape) return;
+    const rect = shape.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+
+    dragShapeRef.current = {
+      mode: "rotate",
+      index: selectedShape.index,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: selectedShape.x,
+      originY: selectedShape.y,
+      originWidth: selectedShape.width,
+      originHeight: selectedShape.height,
+      originRotation: selectedShape.rotation,
+      originAngle: getAngleFromCenter(centerX, centerY, event.clientX, event.clientY),
+    };
+  };
+
   const updateImageFromIndex = (
     index: number,
     updater: (currentState: SelectedImageState) => SelectedImageState,
@@ -700,6 +1437,19 @@ export default function DocumentUpsert() {
     if (!image) return;
 
     applyImageState(updater(readImageState(image)));
+  };
+
+  const updateShapeFromIndex = (
+    index: number,
+    updater: (currentState: SelectedShapeState) => SelectedShapeState,
+  ) => {
+    const editor = quillRef.current?.getEditor();
+    if (!editor) return;
+    const shapes = Array.from(editor.root.querySelectorAll(".document-shape-embed"));
+    const shape = shapes[index] as HTMLElement | undefined;
+    if (!shape) return;
+
+    applyShapeState(updater(readShapeState(shape)));
   };
 
   const goToBuilder = async () => {
@@ -838,8 +1588,8 @@ export default function DocumentUpsert() {
         ) : (
           <Card className="rounded-xl shadow-sm">
             <Box sx={{ borderBottom: 1, borderColor: "divider" }} className="p-4">
-              <Grid container spacing={2} alignItems="center">
-                <Grid size={{ xs: 12, md: 3 }}>
+              <Grid container spacing={2} alignItems="center" className="mb-3">
+                <Grid size={{ xs: 12, md: 4 }}>
                   <TextField fullWidth size="small" label={t("Title")} name="name" value={formik.values.name || ""} onChange={formik.handleChange} />
                 </Grid>
                 <Grid size={{ xs: 12, md: 2 }}>
@@ -856,23 +1606,15 @@ export default function DocumentUpsert() {
                     ))}
                   </TextField>
                 </Grid>
-                <Grid size={{ xs: 12, md: 5 }}>
-                  <Box className="flex flex-wrap justify-end gap-2">
-                    <Button variant="surface" color="grey" startIcon={<NiKnobs size="medium" />} onClick={() => setPaperDialogOpen(true)}>
-                      {t("Paper Setup")}
-                    </Button>
-                    <Button variant="surface" color="grey" startIcon={<NiClipboard size="medium" />} onClick={() => setVariableDialogOpen(true)}>
-                      {t("Variables")}
-                    </Button>
-                    <Button variant="surface" color="grey" startIcon={<NiDocumentImage size="medium" />} onClick={() => setImageDialogOpen(true)} disabled={!selectedImage}>
-                      {t("Image Controls")}
-                    </Button>
+                <Grid size={{ xs: 12, md: 4 }}>
+                  <Box className="flex justify-end gap-2">
                     <Button type="submit" variant="surface" color="primary" startIcon={<NiFloppyDisk size="medium" />} disabled={loading}>
                       {loading ? t("Saving...") : t("Save Document")}
                     </Button>
                   </Box>
                 </Grid>
               </Grid>
+
             </Box>
 
             <CardContent>
@@ -881,172 +1623,338 @@ export default function DocumentUpsert() {
                 <Chip label={`${usedVariables.length} ${t("variables used")}`} size="small" variant="outlined" color="warning" />
                 {formik.values.docType === "student" && <Chip label={t("Student variable mode")} size="small" color="primary" variant="outlined" />}
                 {selectedImage && <Chip label={t("Image Selected")} size="small" color="secondary" variant="outlined" onClick={() => setImageDialogOpen(true)} />}
+                {selectedShape && <Chip label={t("Shape Selected")} size="small" color="info" variant="outlined" onClick={() => setShapeDialogOpen(true)} />}
               </Box>
 
-              <Box className="overflow-auto rounded-xl bg-grey-50 p-4">
+              <Box
+                className="mb-4 space-y-3 rounded-xl border border-divider p-3"
+                sx={{
+                  position: "sticky",
+                  top: 12,
+                  zIndex: 20,
+                  backgroundColor: theme.palette.background.paper,
+                }}
+              >
+                <Box className="flex flex-wrap items-center gap-2">
+                  <TextField
+                    size="small"
+                    select
+                    label={t("Font")}
+                    value={fontFamily}
+                    onChange={(event) => applyFontFamily(event.target.value)}
+                    sx={{ width: 180 }}
+                  >
+                    {availableFonts.map((font) => (
+                      <MenuItem key={font.value} value={font.value} sx={{ fontFamily: font.value }}>
+                        {font.label}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                  <Button size="small" variant="surface" color="grey" onClick={() => fontUploadInputRef.current?.click()}>
+                    {t("Upload .ttf/.otf/.woff/.woff2")}
+                  </Button>
+                  <input
+                    ref={fontUploadInputRef}
+                    type="file"
+                    accept={FONT_UPLOAD_ACCEPT}
+                    onChange={handleFontUpload}
+                    style={{ display: "none" }}
+                  />
+                  <TextField
+                    size="small"
+                    select
+                    label={t("Text Size")}
+                    value={getFontSizeSelectValue(fontSizePx)}
+                    onChange={(event) => {
+                      if (event.target.value === "custom") return;
+                      applyFontSize(event.target.value.replace("px", ""));
+                    }}
+                    sx={{ width: 128 }}
+                  >
+                    {FONT_SIZE_OPTIONS.map((size) => (
+                      <MenuItem key={size} value={size}>{size}</MenuItem>
+                    ))}
+                    <MenuItem value="custom">{t("Custom")}</MenuItem>
+                  </TextField>
+                  <TextField
+                    size="small"
+                    type="number"
+                    label={t("PX")}
+                    value={fontSizePx}
+                    onChange={(event) => setFontSizePx(event.target.value)}
+                    onBlur={() => applyFontSize(fontSizePx)}
+                    sx={{ width: 104 }}
+                    InputProps={{
+                      endAdornment: <InputAdornment position="end">px</InputAdornment>,
+                    }}
+                  />
+                  <Button size="small" variant="surface" color="grey" startIcon={<NiKnobs size="medium" />} onClick={() => setPaperDialogOpen(true)}>
+                    {t("Paper")}
+                  </Button>
+                  <Button size="small" variant="surface" color="grey" startIcon={<NiClipboard size="medium" />} onClick={() => setVariableDialogOpen(true)}>
+                    {t("Variables")}
+                  </Button>
+                  <Button size="small" variant="surface" color="grey" startIcon={<NiSquare size="medium" />} onClick={() => insertShape("square")}>
+                    {t("Shape")}
+                  </Button>
+                  <Button size="small" variant="surface" color="grey" startIcon={<NiMinusSquare size="medium" />} onClick={() => insertShape("line")}>
+                    {t("Line")}
+                  </Button>
+                  <Button size="small" variant="outlined" color="grey" onClick={() => setCanvasZoom((current) => Math.max(0.5, Number((current - 0.1).toFixed(2))))}>
+                    -
+                  </Button>
+                  <Chip label={`${Math.round(currentCanvasZoom * 100)}%`} size="small" />
+                  <Button size="small" variant="outlined" color="grey" onClick={() => setCanvasZoom((current) => Math.min(1.5, Number((current + 0.1).toFixed(2))))}>
+                    +
+                  </Button>
+                  <Button size="small" variant="text" color="grey" onClick={() => setCanvasZoom(fitZoom)}>
+                    {t("Fit")}
+                  </Button>
+                </Box>
+
                 <Box
-                  ref={pageCanvasRef}
-                  onMouseDownCapture={handleEditorMouseDownCapture}
+                  ref={toolbarHostRef}
+                  className="rounded-xl border border-divider p-3"
                   sx={{
-                    width: `${pageSettings.widthMm}mm`,
-                    minHeight: `${pageSettings.heightMm}mm`,
-                    mx: "auto",
-                    position: "relative",
-                    backgroundColor: "#fff",
-                    border: "1px solid",
-                    borderColor: "divider",
-                    borderRadius: "12px",
-                    boxShadow: "0 18px 45px rgba(15, 23, 42, 0.08)",
-                    p: `${pageSettings.marginTopMm}mm ${pageSettings.marginRightMm}mm ${pageSettings.marginBottomMm}mm ${pageSettings.marginLeftMm}mm`,
+                    minHeight: 72,
+                    "& .ql-toolbar.ql-snow": {
+                      display: "flex",
+                      flexWrap: "wrap",
+                      alignItems: "center",
+                      gap: 1,
+                      p: 0,
+                      border: "none",
+                      backgroundColor: "transparent",
+                      boxShadow: "none",
+                    },
+                    "& .ql-toolbar.ql-snow .ql-formats": {
+                      mr: "0 !important",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 0.5,
+                      px: 1,
+                      py: 0.75,
+                      border: "1px solid",
+                      borderColor: "divider",
+                      borderRadius: 2,
+                      backgroundColor: theme.palette.background.paper,
+                    },
+                    "& .ql-toolbar.ql-snow button, & .ql-toolbar.ql-snow .ql-picker-label": {
+                      color: theme.palette.text.primary,
+                    },
+                    "& .ql-toolbar.ql-snow .ql-stroke": {
+                      stroke: theme.palette.text.primary,
+                    },
+                    "& .ql-toolbar.ql-snow .ql-fill": {
+                      fill: theme.palette.text.primary,
+                    },
+                    "& .ql-toolbar.ql-snow button:hover, & .ql-toolbar.ql-snow button.ql-active": {
+                      color: theme.palette.primary.main,
+                      backgroundColor: theme.palette.action.hover,
+                    },
+                    "& .ql-toolbar.ql-snow button:hover .ql-stroke, & .ql-toolbar.ql-snow button.ql-active .ql-stroke": {
+                      stroke: theme.palette.primary.main,
+                    },
+                    "& .ql-toolbar.ql-snow button:hover .ql-fill, & .ql-toolbar.ql-snow button.ql-active .ql-fill": {
+                      fill: theme.palette.primary.main,
+                    },
+                    "& .ql-toolbar.ql-snow .ql-picker.ql-header": {
+                      width: "auto",
+                      minWidth: 104,
+                    },
+                    "& .ql-toolbar.ql-snow .ql-picker-label": {
+                      px: 1.25,
+                      py: 0.75,
+                      fontSize: 14,
+                    },
+                    "& .ql-picker-options": {
+                      zIndex: 30,
+                      backgroundColor: theme.palette.background.paper,
+                      color: theme.palette.text.primary,
+                      borderColor: theme.palette.divider,
+                    },
                   }}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    const variable = event.dataTransfer.getData("text/plain");
-                    if (variable) {
-                      void insertVariable(variable);
-                    }
+                />
+              </Box>
+
+              <Box
+                sx={{
+                  height: { xs: "82vh", lg: "calc(100vh - 170px)" },
+                  position: "relative",
+                }}
+              >
+                {(selectedImage || selectedShape) && (
+                  <Box
+                    sx={{
+                      position: "absolute",
+                      top: 12,
+                      right: 12,
+                      zIndex: 12,
+                      width: 156,
+                      pointerEvents: "none",
+                      display: { xs: "none", lg: "block" },
+                    }}
+                  >
+                    <Card className="rounded-xl shadow-sm" sx={{ pointerEvents: "auto" }}>
+                      <CardContent className="space-y-2 p-2!">
+                        {selectedImage && (
+                          <>
+                            <Chip label={t("Image")} color="secondary" size="small" />
+                            <Box className="flex gap-1">
+                              <Button size="small" fullWidth variant={selectedImage.positionMode === "flow" ? "contained" : "outlined"} onClick={() => applyImageState({ ...selectedImage, positionMode: "flow" })}>
+                                {t("Flow")}
+                              </Button>
+                              <Button size="small" fullWidth variant={selectedImage.positionMode === "absolute" ? "contained" : "outlined"} onClick={() => applyImageState({ ...selectedImage, positionMode: "absolute" })}>
+                                {t("Abs")}
+                              </Button>
+                            </Box>
+                            <TextField fullWidth size="small" type="number" label={t("Width")} value={selectedImage.width} onChange={(event) => applyImageState({ ...selectedImage, width: Number(event.target.value) || 40 })} />
+                            <TextField fullWidth size="small" type="number" label={t("Opacity")} value={Math.round(selectedImage.opacity * 100)} onChange={(event) => applyImageState({ ...selectedImage, opacity: Math.max(0.05, Math.min(1, (Number(event.target.value) || 100) / 100)) })} InputProps={{ endAdornment: <InputAdornment position="end">%</InputAdornment> }} />
+                            <Button fullWidth size="small" variant="surface" color="grey" onClick={() => setImageDialogOpen(true)}>{t("Image Controls")}</Button>
+                            <Button fullWidth size="small" color="error" variant="text" startIcon={<NiBinEmpty size="small" />} onClick={removeSelectedImage}>{t("Remove")}</Button>
+                          </>
+                        )}
+                        {selectedShape && (
+                          <>
+                            <Chip label={t(selectedShape.shape)} color="info" size="small" />
+                            <TextField fullWidth size="small" type="number" label={t("Width")} value={selectedShape.width} onChange={(event) => applyShapeState({ ...selectedShape, width: Number(event.target.value) || 20 })} />
+                            <TextField fullWidth size="small" type="number" label={t(selectedShape.shape === "line" ? "Thickness" : "Height")} value={selectedShape.height} onChange={(event) => applyShapeState({ ...selectedShape, height: Number(event.target.value) || 20 })} />
+                            <TextField fullWidth size="small" type="number" label={t("Opacity")} value={Math.round(selectedShape.opacity * 100)} onChange={(event) => applyShapeState({ ...selectedShape, opacity: Math.max(0.05, Math.min(1, (Number(event.target.value) || 100) / 100)) })} InputProps={{ endAdornment: <InputAdornment position="end">%</InputAdornment> }} />
+                            <Button fullWidth size="small" variant="surface" color="grey" onClick={() => setShapeDialogOpen(true)}>{t("Shape Controls")}</Button>
+                            <Button fullWidth size="small" color="error" variant="text" startIcon={<NiBinEmpty size="small" />} onClick={removeSelectedShape}>{t("Remove")}</Button>
+                          </>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </Box>
+                )}
+
+                <Box
+                  ref={previewViewportRef}
+                  className="overflow-auto rounded-xl bg-grey-50 p-3"
+                  sx={{
+                    height: "100%",
                   }}
-                  onDragOver={(event) => event.preventDefault()}
                 >
                   <Box
                     sx={{
-                      "& .ql-toolbar.ql-snow": {
-                        mb: 2.5,
-                        display: "flex",
-                        flexWrap: "wrap",
-                        alignItems: "center",
-                        gap: 1,
-                        p: 1.5,
-                        borderRadius: 3,
-                        borderColor: "divider",
-                        backgroundColor: theme.palette.mode === "dark" ? theme.palette.grey[900] : theme.palette.grey[50],
-                      },
-                      "& .ql-toolbar.ql-snow .ql-formats": {
-                        mr: "0 !important",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 0.5,
-                        px: 1,
-                        py: 0.75,
-                        border: "1px solid",
-                        borderColor: "divider",
-                        borderRadius: 2,
-                        backgroundColor: theme.palette.background.paper,
-                      },
-                      "& .ql-toolbar.ql-snow button, & .ql-toolbar.ql-snow .ql-picker-label": {
-                        color: theme.palette.text.primary,
-                      },
-                      "& .ql-toolbar.ql-snow .ql-stroke": {
-                        stroke: theme.palette.text.primary,
-                      },
-                      "& .ql-toolbar.ql-snow .ql-fill": {
-                        fill: theme.palette.text.primary,
-                      },
-                      "& .ql-toolbar.ql-snow button:hover, & .ql-toolbar.ql-snow button.ql-active": {
-                        color: theme.palette.primary.main,
-                        backgroundColor: theme.palette.action.hover,
-                      },
-                      "& .ql-toolbar.ql-snow button:hover .ql-stroke, & .ql-toolbar.ql-snow button.ql-active .ql-stroke": {
-                        stroke: theme.palette.primary.main,
-                      },
-                      "& .ql-toolbar.ql-snow button:hover .ql-fill, & .ql-toolbar.ql-snow button.ql-active .ql-fill": {
-                        fill: theme.palette.primary.main,
-                      },
-                      "& .ql-toolbar.ql-snow .ql-picker.ql-header, & .ql-toolbar.ql-snow .ql-picker.ql-size": {
-                        width: "auto",
-                        minWidth: 104,
-                      },
-                      "& .ql-toolbar.ql-snow .ql-picker-label": {
-                        px: 1.25,
-                        py: 0.75,
-                        fontSize: 14,
-                      },
-                      "& .ql-picker-options": {
-                        zIndex: 30,
-                        backgroundColor: theme.palette.background.paper,
-                        color: theme.palette.text.primary,
-                        borderColor: theme.palette.divider,
-                      },
-                      "& .ql-container.ql-snow": {
-                        border: "none",
-                      },
-                      "& .ql-editor": {
-                        minHeight: 820,
-                        padding: 0,
-                        color: "#000000",
-                        position: "relative",
-                      },
-                      "& .ql-editor img": {
-                        borderRadius: 4,
-                        maxWidth: "100%",
-                      },
-                      "& .ql-editor img:hover": {
-                        outline: `2px solid ${theme.palette.primary.main}`,
-                        outlineOffset: 2,
-                      },
-                      "& .ql-editor p, & .ql-editor li, & .ql-editor h1, & .ql-editor h2, & .ql-editor h3, & .ql-editor h4, & .ql-editor h5, & .ql-editor h6, & .ql-editor blockquote": {
-                        color: "#000000",
-                      },
-                      "& .ql-editor.ql-blank::before": {
-                        color: theme.palette.text.disabled,
-                      },
+                      width: `calc(${pageSettings.widthMm}mm * ${currentCanvasZoom})`,
+                      height: `calc(${pageSettings.heightMm}mm * ${currentCanvasZoom})`,
+                      mx: "auto",
+                      position: "relative",
                     }}
                   >
-                    <ReactQuill
-                      ref={quillRef}
-                      theme="snow"
-                      value={formik.values.templateContent || ""}
-                      onChange={(value) => formik.setFieldValue("templateContent", value)}
-                      modules={{
-                        toolbar: [
-                          [{ header: [1, 2, 3, false] }],
-                          [{ size: ["small", false, "large", "huge"] }],
-                          [{ align: "" }, { align: "center" }, { align: "right" }, { align: "justify" }],
-                          ["bold", "italic", "strike", "underline"],
-                          ["blockquote", "code-block", "code"],
-                          [{ list: "ordered" }, { list: "bullet" }, { list: "check" }],
-                          [{ script: "sub" }, { script: "super" }],
-                          [{ indent: "-1" }, { indent: "+1" }],
-                          [{ direction: "" }],
-                          [{ color: [] }, { background: [] }],
-                          ["table", "image", "video", "formula", "link"],
-                          ["clean"],
-                        ],
+                    <Box
+                      ref={pageCanvasRef}
+                      onMouseDownCapture={handleEditorMouseDownCapture}
+                      sx={{
+                        width: `${pageSettings.widthMm}mm`,
+                        minHeight: `${pageSettings.heightMm}mm`,
+                        position: "absolute",
+                        inset: 0,
+                        transform: `scale(${currentCanvasZoom})`,
+                        transformOrigin: "top left",
+                        backgroundColor: "#fff",
+                        border: "1px solid",
+                        borderColor: "divider",
+                        borderRadius: "12px",
+                        boxShadow: "0 18px 45px rgba(15, 23, 42, 0.08)",
+                        p: `${pageSettings.marginTopMm}mm ${pageSettings.marginRightMm}mm ${pageSettings.marginBottomMm}mm ${pageSettings.marginLeftMm}mm`,
                       }}
-                      formats={[
-                        "header",
-                        "size",
-                        "align",
-                        "bold",
-                        "italic",
-                        "strike",
-                        "underline",
-                        "blockquote",
-                        "code-block",
-                        "code",
-                        "list",
-                        "script",
-                        "indent",
-                        "direction",
-                        "color",
-                        "background",
-                        "table",
-                        "image",
-                        "video",
-                        "formula",
-                        "link",
-                        "width",
-                        "height",
-                        "style",
-                        "data-position-mode",
-                        "data-x",
-                        "data-y",
-                        "data-opacity",
-                      ]}
-                      className="outlined document-editor"
-                    />
-                    {selectedImage && selectedImageFrame && (
-                      <>
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        const variable = event.dataTransfer.getData("text/plain");
+                        if (variable) {
+                          void insertVariable(variable);
+                        }
+                      }}
+                      onDragOver={(event) => event.preventDefault()}
+                    >
+                    <Box
+                      sx={{
+                        "& .ql-container.ql-snow": {
+                          border: "none",
+                        },
+                        "& .ql-editor": {
+                          minHeight: 820,
+                          padding: 0,
+                          color: "#000000",
+                          position: "relative",
+                        },
+                        "& .ql-editor .document-shape-embed": {
+                          cursor: "grab",
+                        },
+                        "& .ql-editor img": {
+                          borderRadius: 4,
+                          maxWidth: "100%",
+                        },
+                        "& .ql-editor img:hover": {
+                          outline: `2px solid ${theme.palette.primary.main}`,
+                          outlineOffset: 2,
+                        },
+                        "& .ql-editor p, & .ql-editor li, & .ql-editor h1, & .ql-editor h2, & .ql-editor h3, & .ql-editor h4, & .ql-editor h5, & .ql-editor h6, & .ql-editor blockquote": {
+                          color: "#000000",
+                        },
+                        "& .ql-editor.ql-blank::before": {
+                          color: theme.palette.text.disabled,
+                        },
+                      }}
+                    >
+                      <ReactQuill
+                        ref={quillRef}
+                        theme="snow"
+                        value={formik.values.templateContent || ""}
+                        onChange={(value) => formik.setFieldValue("templateContent", value)}
+                        modules={{
+                          toolbar: [
+                            [{ header: [1, 2, 3, false] }],
+                            [{ align: "" }, { align: "center" }, { align: "right" }, { align: "justify" }],
+                            ["bold", "italic", "strike", "underline"],
+                            ["blockquote", "code-block", "code"],
+                            [{ list: "ordered" }, { list: "bullet" }, { list: "check" }],
+                            [{ script: "sub" }, { script: "super" }],
+                            [{ indent: "-1" }, { indent: "+1" }],
+                            [{ direction: "" }],
+                            [{ color: [] }, { background: [] }],
+                            ["table", "image", "video", "formula", "link"],
+                            ["clean"],
+                          ],
+                        }}
+                        formats={[
+                          "header",
+                          "font",
+                          "size",
+                          "align",
+                          "bold",
+                          "italic",
+                          "strike",
+                          "underline",
+                          "blockquote",
+                          "code-block",
+                          "code",
+                          "list",
+                          "script",
+                          "indent",
+                          "direction",
+                          "color",
+                          "background",
+                          "table",
+                          "image",
+                          "video",
+                          "formula",
+                          "link",
+                          "document-shape",
+                          "width",
+                          "height",
+                          "style",
+                          "data-position-mode",
+                          "data-x",
+                          "data-y",
+                          "data-opacity",
+                        ]}
+                        className="outlined document-editor"
+                      />
+                      {selectedImage && selectedImageFrame && (
                         <Box
                           onMouseDown={handleOverlayDragStart}
                           title={selectedImage.positionMode === "absolute" ? t("Drag to move image") : t("Set absolute mode to move image")}
@@ -1083,59 +1991,71 @@ export default function DocumentUpsert() {
                             }}
                           />
                         </Box>
+                      )}
+                      {selectedShape && selectedShapeFrame && (
                         <Box
+                          onMouseDown={handleShapeOverlayDragStart}
+                          title={t("Drag to move shape")}
                           sx={{
                             position: "absolute",
-                            left: selectedImageFrame.left,
-                            top: Math.max(selectedImageFrame.top - 116, 8),
-                            width: 280,
-                            p: 1.5,
-                            borderRadius: 2,
-                            border: "1px solid",
-                            borderColor: "divider",
-                            backgroundColor: theme.palette.background.paper,
-                            boxShadow: theme.shadows[4],
-                            zIndex: 9,
+                            left: selectedShapeFrame.left,
+                            top: selectedShapeFrame.top,
+                            width: selectedShapeFrame.width,
+                            height: selectedShapeFrame.height,
+                            border: `2px solid ${theme.palette.info.main}`,
+                            borderRadius: selectedShape.shape === "circle" ? "999px" : 1,
+                            pointerEvents: "auto",
+                            zIndex: 8,
+                            boxShadow: `0 0 0 1px ${theme.palette.common.white}`,
+                            cursor: "move",
+                            backgroundColor: "transparent",
                           }}
                         >
-                          <Box className="mb-2 flex items-center justify-between gap-2">
-                            <Button
-                              size="small"
-                              variant={selectedImage.positionMode === "flow" ? "contained" : "outlined"}
-                              onClick={() => applyImageState({ ...selectedImage, positionMode: "flow" })}
-                            >
-                              {t("Flow")}
-                            </Button>
-                            <Button
-                              size="small"
-                              variant={selectedImage.positionMode === "absolute" ? "contained" : "outlined"}
-                              onClick={() => applyImageState({ ...selectedImage, positionMode: "absolute" })}
-                            >
-                              {t("Absolute")}
-                            </Button>
-                            <Button size="small" variant="text" onClick={() => setImageDialogOpen(true)}>
-                              {t("More")}
-                            </Button>
+                          <Box
+                            onMouseDown={handleShapeResizeStart}
+                            title={t("Drag to resize shape")}
+                            sx={{
+                              position: "absolute",
+                              right: -8,
+                              bottom: -8,
+                              width: 16,
+                              height: 16,
+                              borderRadius: "50%",
+                              backgroundColor: theme.palette.info.main,
+                              border: `2px solid ${theme.palette.common.white}`,
+                              cursor: "nwse-resize",
+                              pointerEvents: "auto",
+                              boxShadow: theme.shadows[2],
+                            }}
+                          />
+                          <Box
+                            onMouseDown={handleShapeRotateStart}
+                            title={t("Drag to rotate shape")}
+                            sx={{
+                              position: "absolute",
+                              left: "50%",
+                              bottom: -34,
+                              transform: "translateX(-50%)",
+                              width: 28,
+                              height: 28,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              borderRadius: "50%",
+                              backgroundColor: theme.palette.background.paper,
+                              border: `2px solid ${theme.palette.info.main}`,
+                              color: theme.palette.info.main,
+                              cursor: "grab",
+                              pointerEvents: "auto",
+                              boxShadow: theme.shadows[2],
+                            }}
+                          >
+                            <NiRefresh size="small" />
                           </Box>
-                          <Typography variant="caption" color="text.secondary">{t("Width")}</Typography>
-                          <Slider
-                            size="small"
-                            min={40}
-                            max={1200}
-                            value={selectedImage.width}
-                            onChange={(_, value) => applyImageState({ ...selectedImage, width: Number(value) })}
-                          />
-                          <Typography variant="caption" color="text.secondary">{t("Opacity")}</Typography>
-                          <Slider
-                            size="small"
-                            min={5}
-                            max={100}
-                            value={Math.round(selectedImage.opacity * 100)}
-                            onChange={(_, value) => applyImageState({ ...selectedImage, opacity: Number(value) / 100 })}
-                          />
                         </Box>
-                      </>
-                    )}
+                      )}
+                      </Box>
+                    </Box>
                   </Box>
                 </Box>
               </Box>
@@ -1378,6 +2298,218 @@ export default function DocumentUpsert() {
         </DialogContent>
         <DialogActions>
           <Button color="grey" onClick={() => setImageDialogOpen(false)}>{t("Close")}</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={shapeDialogOpen} onClose={() => setShapeDialogOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>
+          <Box className="flex items-center justify-between">
+            <Typography variant="h6">{t("Shape Controls")}</Typography>
+            <IconButton size="small" onClick={() => setShapeDialogOpen(false)}>
+              <NiCross size="small" />
+            </IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent dividers>
+          {!selectedShape ? (
+            <Typography color="text.secondary">{t("Add or select shape inside document first.")}</Typography>
+          ) : (
+            <Grid container spacing={3}>
+              <Grid size={12}>
+                <Alert severity="info">
+                  {t("Drag shape on page. Use top rotate handle and move mouse to rotate.")}
+                </Alert>
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <TextField
+                  fullWidth
+                  select
+                  label={t("Shape")}
+                  value={selectedShape.shape}
+                  onChange={(event) =>
+                    applyShapeState({
+                      ...selectedShape,
+                      shape: event.target.value as ShapeType,
+                    })
+                  }
+                >
+                  {SHAPE_TYPES.map((shape) => (
+                    <MenuItem key={shape} value={shape}>{t(shape)}</MenuItem>
+                  ))}
+                </TextField>
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <TextField
+                  fullWidth
+                  select
+                  label={t("Border Style")}
+                  value={selectedShape.borderStyle}
+                  onChange={(event) =>
+                    applyShapeState({
+                      ...selectedShape,
+                      borderStyle: event.target.value as ShapeBorderStyle,
+                    })
+                  }
+                >
+                  {SHAPE_BORDER_STYLES.map((style) => (
+                    <MenuItem key={style} value={style}>{t(style)}</MenuItem>
+                  ))}
+                </TextField>
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <TextField
+                  fullWidth
+                  type="number"
+                  label={t("Width (px)")}
+                  value={selectedShape.width}
+                  onChange={(event) =>
+                    applyShapeState({
+                      ...selectedShape,
+                      width: Number(event.target.value) || 20,
+                    })
+                  }
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <TextField
+                  fullWidth
+                  type="number"
+                  label={t(selectedShape.shape === "line" ? "Thickness (px)" : "Height (px)")}
+                  value={selectedShape.height}
+                  onChange={(event) =>
+                    applyShapeState({
+                      ...selectedShape,
+                      height: Number(event.target.value) || 20,
+                    })
+                  }
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <TextField
+                  fullWidth
+                  type="number"
+                  label={t("X Position")}
+                  value={selectedShape.x}
+                  onChange={(event) =>
+                    applyShapeState({
+                      ...selectedShape,
+                      x: Number(event.target.value) || 0,
+                    })
+                  }
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <TextField
+                  fullWidth
+                  type="number"
+                  label={t("Y Position")}
+                  value={selectedShape.y}
+                  onChange={(event) =>
+                    applyShapeState({
+                      ...selectedShape,
+                      y: Number(event.target.value) || 0,
+                    })
+                  }
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <TextField
+                  fullWidth
+                  type="number"
+                  label={t("Border Width (px)")}
+                  value={selectedShape.borderWidth}
+                  onChange={(event) =>
+                    applyShapeState({
+                      ...selectedShape,
+                      borderWidth: Number(event.target.value) || 1,
+                    })
+                  }
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <TextField
+                  fullWidth
+                  type="number"
+                  label={t("Opacity %")}
+                  value={Math.round(selectedShape.opacity * 100)}
+                  onChange={(event) =>
+                    applyShapeState({
+                      ...selectedShape,
+                      opacity: Math.max(0.05, Math.min(1, (Number(event.target.value) || 100) / 100)),
+                    })
+                  }
+                  InputProps={{
+                    endAdornment: <InputAdornment position="end">%</InputAdornment>,
+                  }}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <TextField
+                  fullWidth
+                  label={t(selectedShape.shape === "line" ? "Line Color" : "Border Color")}
+                  value={selectedShape.borderColor}
+                  onChange={(event) =>
+                    applyShapeState({
+                      ...selectedShape,
+                      borderColor: event.target.value || "#111827",
+                    })
+                  }
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <input
+                          type="color"
+                          value={selectedShape.borderColor}
+                          onChange={(event) =>
+                            applyShapeState({
+                              ...selectedShape,
+                              borderColor: event.target.value,
+                            })
+                          }
+                          style={{ width: 28, height: 28, border: "none", background: "transparent", padding: 0 }}
+                        />
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+              </Grid>
+              {selectedShape.shape !== "line" && (
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <TextField
+                    fullWidth
+                    label={t("Fill Color")}
+                    value={selectedShape.fillColor}
+                    onChange={(event) =>
+                      applyShapeState({
+                        ...selectedShape,
+                        fillColor: event.target.value || "transparent",
+                      })
+                    }
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <input
+                            type="color"
+                            value={selectedShape.fillColor === "transparent" ? "#ffffff" : selectedShape.fillColor}
+                            onChange={(event) =>
+                              applyShapeState({
+                                ...selectedShape,
+                                fillColor: event.target.value,
+                              })
+                            }
+                            style={{ width: 28, height: 28, border: "none", background: "transparent", padding: 0 }}
+                          />
+                        </InputAdornment>
+                      ),
+                    }}
+                  />
+                </Grid>
+              )}
+            </Grid>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button color="grey" onClick={() => setShapeDialogOpen(false)}>{t("Close")}</Button>
         </DialogActions>
       </Dialog>
     </Box>
