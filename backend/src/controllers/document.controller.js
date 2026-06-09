@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import puppeteer from 'puppeteer';
 import { fileURLToPath } from 'url';
 import { parse } from 'csv-parse';
 import { stringify } from 'csv-stringify';
@@ -519,6 +520,7 @@ export const uploadTemplateFile = async (request, reply) => {
 };
 
 export const generateDocument = async (request, reply) => {
+    let browser = null;
     try {
         const { templateId, studentId } = request.body;
 
@@ -557,10 +559,30 @@ export const generateDocument = async (request, reply) => {
             title: student ? `${template.name} - ${student.fullNameEn}` : template.name
         });
 
+        // Generate PDF using Puppeteer
+        const settings = normalizePageSettings(template?.pageSettings);
+        browser = await puppeteer.launch({
+            headless: true,
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+        });
+        const page = await browser.newPage();
+        await page.setContent(renderedHtml, { waitUntil: 'networkidle0', timeout: 30000 });
+
+        const pdfBuffer = await page.pdf({
+            width: `${settings.widthMm}mm`,
+            height: `${settings.heightMm}mm`,
+            margin: { top: 0, right: 0, bottom: 0, left: 0 },
+            printBackground: true,
+            preferCSSPageSize: false
+        });
+
+        await browser.close();
+        browser = null;
+
         const token = crypto.randomUUID();
-        const fileName = `${template.name.replace(/[^a-z0-9_-]+/gi, '_')}_${Date.now()}.html`;
+        const fileName = `${template.name.replace(/[^a-z0-9_-]+/gi, '_')}_${Date.now()}.pdf`;
         const filePath = path.join(GENERATED_DIR, fileName);
-        fs.writeFileSync(filePath, renderedHtml, 'utf8');
+        fs.writeFileSync(filePath, pdfBuffer);
 
         const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
         await GeneratedDocument.create({
@@ -568,24 +590,23 @@ export const generateDocument = async (request, reply) => {
             student: student?._id || null,
             filePath,
             fileName,
-            contentType: 'text/html; charset=utf-8',
-            fileExtension: 'html',
+            contentType: 'application/pdf',
+            fileExtension: 'pdf',
             downloadToken: token,
             expiresAt,
             generatedBy: request.user?.id || null
         });
 
-        const baseUrl = `${request.protocol}://${request.hostname}`;
-        const downloadUrl = `${baseUrl}/api/v1/documents/download/${token}`;
-
         return reply.send({
             success: true,
             message: 'Document generated successfully.',
-            downloadUrl,
-            expiresAt: expiresAt.toISOString(),
-            renderedHtml
+            downloadToken: token,
+            expiresAt: expiresAt.toISOString()
         });
     } catch (error) {
+        if (browser) {
+            try { await browser.close(); } catch (_) { /* ignore */ }
+        }
         logger.error(error);
         return reply.code(500).send({ success: false, message: 'Failed to generate document.' });
     }

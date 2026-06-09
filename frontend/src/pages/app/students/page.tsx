@@ -220,31 +220,6 @@ export default function StudentsIndex() {
     setGeneratingTemplateId(null);
   };
 
-  const openPrintWindow = (html: string, title: string) => {
-    const printWindow = window.open("", "_blank", "noopener,noreferrer");
-    if (!printWindow) {
-      enqueueSnackbar(t("Popup blocked. Please allow popups and try again."), { variant: "error" });
-      return;
-    }
-
-    const printHtml = html.replace(
-      "</body>",
-      `<script>
-        window.onload = function () {
-          setTimeout(function () {
-            window.focus();
-            window.print();
-          }, 250);
-        };
-      </script></body>`,
-    );
-
-    printWindow.document.open();
-    printWindow.document.write(printHtml);
-    printWindow.document.title = title;
-    printWindow.document.close();
-  };
-
   const handleGenerateStudentDocument = async (template: DocumentTemplate) => {
     if (!documentStudent?._id || !template._id) return;
 
@@ -255,9 +230,12 @@ export default function StudentsIndex() {
         studentId: documentStudent._id,
       });
 
-      if (response.renderedHtml) {
-        openPrintWindow(response.renderedHtml, `${template.name} - ${documentStudent.fullNameEn}`);
-        enqueueSnackbar(t("Document ready. Save it as PDF from print window."), { variant: "success" });
+      if (response.downloadToken) {
+        await DocumentService.downloadGeneratedPdf(
+          response.downloadToken,
+          `${template.name} - ${documentStudent.fullNameEn}`,
+        );
+        enqueueSnackbar(t("PDF downloaded successfully."), { variant: "success" });
         closeDocumentDialog();
       }
     } catch (error: any) {

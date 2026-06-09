@@ -48,8 +48,7 @@ export interface DocumentTemplate {
 export interface GenerateDocumentResponse {
   success: boolean;
   message?: string;
-  downloadUrl?: string;
-  renderedHtml?: string;
+  downloadToken?: string;
   expiresAt?: string;
   missingVariables?: string[];
   missingCount?: number;

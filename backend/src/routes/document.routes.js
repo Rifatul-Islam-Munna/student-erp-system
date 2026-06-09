@@ -14,8 +14,10 @@ import { authenticate, requirePermission } from '../middleware/auth.middleware.j
 import validate from '../middleware/validate.middleware.js';
 
 export default async function documentRoutes(fastify, options) {
-    // Public download route (no auth — token-based access)
-    fastify.get('/download/:token', { schema: { tags: ['Documents'] } }, documentController.downloadDocument);
+    fastify.register(async (publicRoutes) => {
+        // Public download route (no auth — token-based access)
+        publicRoutes.get('/download/:token', { schema: { tags: ['Documents'] } }, documentController.downloadDocument);
+    }, { prefix: '/documents' });
 
     fastify.register(async (protectedRoutes) => {
         protectedRoutes.addHook('onRequest', authenticate);

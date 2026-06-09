@@ -95,4 +95,21 @@ export const DocumentService = {
       body: JSON.stringify(data),
     });
   },
+
+  downloadGeneratedPdf: async (downloadToken: string, fileName: string) => {
+    const apiBase = import.meta.env.VITE_API_URL || "http://localhost:3000/api/v1";
+    const response = await fetch(`${apiBase}/documents/download/${downloadToken}`);
+
+    if (!response.ok) throw new Error("Failed to download PDF");
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName.endsWith(".pdf") ? fileName : `${fileName}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  },
 };

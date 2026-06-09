@@ -39,9 +39,9 @@ export default function DocumentView() {
   const [document, setDocument] = useState<DocumentTemplate | null>(null);
   const [loading, setLoading] = useState(true);
   const [studentId, setStudentId] = useState("");
-  const [downloadUrl, setDownloadUrl] = useState("");
-  const [generatedHtml, setGeneratedHtml] = useState("");
+  const [downloadToken, setDownloadToken] = useState("");
   const [generateError, setGenerateError] = useState("");
+  const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -79,6 +79,7 @@ export default function DocumentView() {
     }
 
     setGenerateError("");
+    setGenerating(true);
 
     try {
       const response = await DocumentService.generateDocument({
@@ -86,16 +87,15 @@ export default function DocumentView() {
         studentId: document.docType === "student" ? studentId.trim() : undefined,
       });
 
-      if (response.success) {
-        setDownloadUrl(response.downloadUrl || "");
-        setGeneratedHtml(response.renderedHtml || "");
-        if (response.downloadUrl) {
-          window.open(response.downloadUrl, "_blank", "noopener,noreferrer");
-        }
+      if (response.success && response.downloadToken) {
+        setDownloadToken(response.downloadToken);
+        await DocumentService.downloadGeneratedPdf(response.downloadToken, document.name);
       }
     } catch (error) {
       console.error("Failed to generate document", error);
       setGenerateError("Failed to generate document");
+    } finally {
+      setGenerating(false);
     }
   };
 
@@ -124,8 +124,8 @@ export default function DocumentView() {
           <Button variant="surface" color="primary" startIcon={<NiPen size="medium" />} onClick={() => navigate(`/${role}/documents/edit/${document._id}`)}>
             {t("Edit")}
           </Button>
-          <Button variant="surface" color="grey" startIcon={<NiPrinter size="medium" />} onClick={handleGenerate}>
-            {t("Generate")}
+          <Button variant="surface" color="grey" startIcon={<NiPrinter size="medium" />} onClick={handleGenerate} disabled={generating}>
+            {generating ? t("Generating PDF...") : t("Generate PDF")}
           </Button>
         </Box>
       </Box>
@@ -162,9 +162,9 @@ export default function DocumentView() {
                 />
               )}
               {generateError && <Alert severity="error">{t(generateError)}</Alert>}
-              {downloadUrl && (
-                <Button fullWidth variant="surface" color="primary" startIcon={<NiDownloadCloud size="medium" />} onClick={() => window.open(downloadUrl, "_blank", "noopener,noreferrer")}>
-                  {t("Download Generated File")}
+              {downloadToken && (
+                <Button fullWidth variant="surface" color="primary" startIcon={<NiDownloadCloud size="medium" />} onClick={() => void DocumentService.downloadGeneratedPdf(downloadToken, document?.name || "document")}>
+                  {t("Download PDF")}
                 </Button>
               )}
               <Typography variant="body2" color="text.secondary">
@@ -189,35 +189,19 @@ export default function DocumentView() {
 
         <Grid size={{ xs: 12, lg: 8 }}>
           <Paper className="overflow-auto rounded-[28px] bg-[#dde5ee] p-5 shadow-sm">
-            {generatedHtml ? (
-              <Box className="overflow-hidden rounded-[14px] border border-slate-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.16)]">
-                <Box
-                  component="iframe"
-                  title={`${document.name}-preview`}
-                  srcDoc={generatedHtml}
-                  sx={{
-                    width: "100%",
-                    minHeight: 960,
-                    border: "none",
-                    backgroundColor: "#fff",
-                  }}
-                />
-              </Box>
-            ) : (
-              <Box className="mx-auto rounded-[14px] border border-slate-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.16)]" sx={paperStyle}>
-                <Box
-                  className="ql-editor"
-                  sx={{
-                    position: "relative",
-                    minHeight: "100%",
-                    "& .document-shape-embed": {
-                      pointerEvents: "auto",
-                    },
-                  }}
-                  dangerouslySetInnerHTML={{ __html: document.templateContent || "<p></p>" }}
-                />
-              </Box>
-            )}
+            <Box className="mx-auto rounded-[14px] border border-slate-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.16)]" sx={paperStyle}>
+              <Box
+                className="ql-editor"
+                sx={{
+                  position: "relative",
+                  minHeight: "100%",
+                  "& .document-shape-embed": {
+                    pointerEvents: "auto",
+                  },
+                }}
+                dangerouslySetInnerHTML={{ __html: document.templateContent || "<p></p>" }}
+              />
+            </Box>
           </Paper>
 
           <Card className="mt-4 rounded-[24px] shadow-sm">
