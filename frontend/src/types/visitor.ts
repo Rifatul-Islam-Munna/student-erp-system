@@ -8,6 +8,7 @@ export interface Visitor {
   address?: string;
   gender: "male" | "female" | "other";
   education?: {
+    _id?: string;
     examName: string;
     year: string;
     board: string;

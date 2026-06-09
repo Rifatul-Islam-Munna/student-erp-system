@@ -53,6 +53,48 @@ const SectionLabel = ({ children }: { children: React.ReactNode }) => (
   </Grid>
 );
 
+const buildVisitorPayload = (values: Partial<Visitor>): Partial<Visitor> => ({
+  ...(() => {
+    const { _id, __v, createdAt, updatedAt, ...payload } = values as Partial<Visitor> & { __v?: number };
+    return payload;
+  })(),
+  fullName: values.fullName || "",
+  dateOfBirth: values.dateOfBirth,
+  phone: values.phone || "",
+  guardianPhone: values.guardianPhone || "",
+  email: values.email || "",
+  address: values.address || "",
+  gender: values.gender || "male",
+  education: (values.education || []).map(({ _id, ...edu }) => edu),
+  JapaneseTest: values.JapaneseTest
+    ? {
+        hasCertificate: values.JapaneseTest.hasCertificate || false,
+        examType: values.JapaneseTest.examType || "",
+        level: values.JapaneseTest.level || "",
+        score: values.JapaneseTest.score || "",
+      }
+    : { hasCertificate: false },
+  visaType: values.visaType || "",
+  preferredCountry: values.preferredCountry || [],
+  intake: values.intake || "",
+  BudgetConcerned: values.BudgetConcerned || false,
+  branch: typeof values.branch === "object" ? values.branch?._id || "" : values.branch || "",
+  school: typeof values.school === "object" ? values.school?._id || "" : values.school || "",
+  partnerAgency: typeof values.partnerAgency === "object" ? values.partnerAgency?._id || "" : values.partnerAgency || "",
+  source: values.source || "",
+  counselor: values.counselor || "",
+  courseType: values.courseType || "",
+  courseName: values.courseName || "",
+  preferredDate: values.preferredDate,
+  counselingNote: values.counselingNote || "",
+  status: values.status || "new",
+  leadScore: values.leadScore,
+  leadCategory: values.leadCategory,
+  followUpDates: values.followUpDates,
+  lastFollowUp: values.lastFollowUp,
+  nextFollowUp: values.nextFollowUp,
+});
+
 export default function VisitorUpsert() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -89,10 +131,11 @@ export default function VisitorUpsert() {
     onSubmit: async (values) => {
       setLoading(true);
       try {
+        const payload = buildVisitorPayload(values);
         if (isEdit && id) {
-          await VisitorService.updateVisitor(id, values);
+          await VisitorService.updateVisitor(id, payload);
         } else {
-          await VisitorService.createVisitor(values);
+          await VisitorService.createVisitor(payload);
         }
         navigate(`/${role}/visitors`);
       } catch (error) {

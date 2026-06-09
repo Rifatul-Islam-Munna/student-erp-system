@@ -92,6 +92,8 @@ export interface Student {
   spouseName?: string;
   father_name_en?: string;
   mother_name_en?: string;
+  mother_dob?: string | Date;
+  mother_phone?: string;
   sponsor_name_en?: string;
   sponsor_relationship?: string;
   emergencyContact?: string;

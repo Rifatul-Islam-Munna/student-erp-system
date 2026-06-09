@@ -90,6 +90,8 @@ const studentSchema = new mongoose.Schema({
     spouseName: { type: String, trim: true },
     father_name_en: { type: String, trim: true },
     mother_name_en: { type: String, trim: true },
+    mother_dob: { type: Date },
+    mother_phone: { type: String, trim: true },
     sponsor_name_en: { type: String, trim: true },
     sponsor_relationship: { type: String, trim: true },
     emergencyContact: { type: String, trim: true },

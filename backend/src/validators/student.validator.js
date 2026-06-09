@@ -89,6 +89,8 @@ export const studentBaseSchema = {
     spouseName: Joi.string().allow(null, ''),
     father_name_en: Joi.string().allow(null, ''),
     mother_name_en: Joi.string().allow(null, ''),
+    mother_dob: Joi.date().iso().allow(null, ''),
+    mother_phone: Joi.string().allow(null, ''),
     sponsor_name_en: Joi.string().allow(null, ''),
     sponsor_relationship: Joi.string().allow(null, ''),
     emergencyContact: Joi.string().allow(null, ''),

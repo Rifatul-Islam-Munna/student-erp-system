@@ -146,6 +146,11 @@ const buildDerivedDocVariables = (values: Partial<Student>) => {
     "{{passport_expiry:day}}": getDatePart(values.passportExpiryDate, "day"),
     "{{father_name:en}}": values.father_name_en || "",
     "{{mother_name:en}}": values.mother_name_en || "",
+    "{{mother_dob}}": formatDateValue(values.mother_dob),
+    "{{mother_dob:year}}": getDatePart(values.mother_dob, "year"),
+    "{{mother_dob:month}}": getDatePart(values.mother_dob, "month"),
+    "{{mother_dob:day}}": getDatePart(values.mother_dob, "day"),
+    "{{mother_phone}}": values.mother_phone || "",
     "{{sponsor_name:en}}": values.sponsor_name_en || "",
     "{{sponsor_name_en}}": values.sponsor_name_en || "",
     "{{sponsor_relationship}}": values.sponsor_relationship || "",
@@ -383,14 +388,25 @@ const getRelationId = (value: any) => {
   return undefined;
 };
 
-const buildStudentPayload = (values: Partial<Student>) => ({
-  ...values,
-  branch: getRelationId(values.branch),
-  counselor: getRelationId(values.counselor),
-  agent: getRelationId(values.agent),
-  partnerAgency: getRelationId(values.partnerAgency),
-  batch: getRelationId(values.batch),
-});
+const stripArrayIds = <T extends { _id?: string }>(items?: T[]) =>
+  (items || []).map(({ _id, ...item }) => item);
+
+const buildStudentPayload = (values: Partial<Student>) => {
+  const { _id, __v, createdAt, updatedAt, ...payload } = values as Partial<Student> & { __v?: number };
+
+  return {
+    ...payload,
+    education: stripArrayIds(values.education),
+    employment: stripArrayIds(values.employment),
+    languageEducation: stripArrayIds(values.languageEducation),
+    languageTest: stripArrayIds(values.languageTest),
+    branch: getRelationId(values.branch),
+    counselor: getRelationId(values.counselor),
+    agent: getRelationId(values.agent),
+    partnerAgency: getRelationId(values.partnerAgency),
+    batch: getRelationId(values.batch),
+  };
+};
 
 const toIsoString = (value: Date) => value.toISOString();
 const DEV_AUTOFILL_STORAGE_KEY = "student-create-dev-autofill";
@@ -432,6 +448,8 @@ export default function StudentUpsert() {
       spouseName: "",
       father_name_en: "",
       mother_name_en: "",
+      mother_dob: undefined,
+      mother_phone: "",
       sponsor_name_en: "",
       sponsor_relationship: "",
       emergencyContact: "",
@@ -649,6 +667,8 @@ export default function StudentUpsert() {
       spouseName: maritalStatus === "married" ? faker.person.fullName() : "",
       father_name_en: faker.person.fullName({ sex: "male" }),
       mother_name_en: faker.person.fullName({ sex: "female" }),
+      mother_dob: toIsoString(faker.date.birthdate({ min: 40, max: 65, mode: "age" })),
+      mother_phone: faker.phone.number("01#########"),
       sponsor_name_en: faker.person.fullName(),
       sponsor_relationship: faker.helpers.arrayElement(["Father", "Mother", "Brother", "Uncle"]),
       emergencyContact: faker.person.fullName(),
@@ -1054,6 +1074,12 @@ export default function StudentUpsert() {
                     <TextField fullWidth id="mother_name_en" name="mother_name_en" label={t("Mother Name (English)")} value={formik.values.mother_name_en || ""} onChange={formik.handleChange} />
                   </Grid>
                   <Grid size={{ xs: 12, md: 6 }}>
+                    <DatePicker label={t("Mother Date of Birth")} value={formik.values.mother_dob ? dayjs(formik.values.mother_dob) : null} onChange={(value) => formik.setFieldValue("mother_dob", value?.toISOString() || undefined)} slotProps={{ textField: { fullWidth: true } }} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <TextField fullWidth id="mother_phone" name="mother_phone" label={t("Mother Phone")} value={formik.values.mother_phone || ""} onChange={formik.handleChange} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
                     <TextField fullWidth id="spouseName" name="spouseName" label={t("Spouse Name")} value={formik.values.spouseName || ""} onChange={formik.handleChange} />
                   </Grid>
 
@@ -1108,16 +1134,12 @@ export default function StudentUpsert() {
                   <Grid size={{ xs: 12, md: 4 }}>
                     <TextField fullWidth id="edu_ssc_subject" name="edu_ssc_subject" label={t("SSC Subject")} value={formik.values.edu_ssc_subject || ""} onChange={formik.handleChange} />
                   </Grid>
-                  {isEdit && (
-                    <>
-                      <Grid size={{ xs: 12, md: 4 }}>
-                        <TextField fullWidth type="number" id="edu_ssc_year" name="edu_ssc_year" label={t("SSC Year")} value={formik.values.edu_ssc_year || ""} onChange={formik.handleChange} />
-                      </Grid>
-                      <Grid size={{ xs: 12, md: 4 }}>
-                        <TextField fullWidth type="number" id="edu_ssc_months" name="edu_ssc_months" label={t("SSC Duration (Months)")} value={formik.values.edu_ssc_months || ""} onChange={formik.handleChange} />
-                      </Grid>
-                    </>
-                  )}
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <TextField fullWidth type="number" id="edu_ssc_year" name="edu_ssc_year" label={t("SSC Year")} value={formik.values.edu_ssc_year || ""} onChange={formik.handleChange} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <TextField fullWidth type="number" id="edu_ssc_months" name="edu_ssc_months" label={t("SSC Duration (Months)")} value={formik.values.edu_ssc_months || ""} onChange={formik.handleChange} />
+                  </Grid>
                   {renderVariableGroup("SSC Variables", sscExtraVariables, "plain")}
 
                   <SectionLabel>{t("HSC Information")}</SectionLabel>
@@ -1130,28 +1152,24 @@ export default function StudentUpsert() {
                   <Grid size={{ xs: 12, md: 4 }}>
                     <TextField fullWidth id="edu_hsc_subject" name="edu_hsc_subject" label={t("HSC Subject")} value={formik.values.edu_hsc_subject || ""} onChange={formik.handleChange} />
                   </Grid>
-                  {isEdit && (
-                    <>
-                      <Grid size={{ xs: 12, md: 3 }}>
-                        <TextField fullWidth type="number" id="edu_hsc_year" name="edu_hsc_year" label={t("HSC Year")} value={formik.values.edu_hsc_year || ""} onChange={formik.handleChange} />
-                      </Grid>
-                      <Grid size={{ xs: 12, md: 3 }}>
-                        <TextField fullWidth type="number" id="edu_hsc_months" name="edu_hsc_months" label={t("HSC Duration (Months)")} value={formik.values.edu_hsc_months || ""} onChange={formik.handleChange} />
-                      </Grid>
-                      <Grid size={{ xs: 12, md: 3 }}>
-                        <TextField fullWidth type="number" id="edu_hsc_expected_schedule_year" name="edu_hsc_expected_schedule_year" label={t("HSC Expected Year")} value={formik.values.edu_hsc_expected_schedule_year || ""} onChange={formik.handleChange} />
-                      </Grid>
-                      <Grid size={{ xs: 12, md: 3 }}>
-                        <TextField fullWidth type="number" id="edu_hsc_expected_schedule_months" name="edu_hsc_expected_schedule_months" label={t("HSC Expected Month Count")} value={formik.values.edu_hsc_expected_schedule_months || ""} onChange={formik.handleChange} />
-                      </Grid>
-                      <Grid size={{ xs: 12, md: 3 }}>
-                        <TextField fullWidth type="number" id="edu_hsc_exam_conducted_year" name="edu_hsc_exam_conducted_year" label={t("HSC Exam Conducted Year")} value={formik.values.edu_hsc_exam_conducted_year || ""} onChange={formik.handleChange} />
-                      </Grid>
-                      <Grid size={{ xs: 12, md: 3 }}>
-                        <TextField fullWidth type="number" id="edu_hsc_exam_conducted_months" name="edu_hsc_exam_conducted_months" label={t("HSC Exam Conducted Month Count")} value={formik.values.edu_hsc_exam_conducted_months || ""} onChange={formik.handleChange} />
-                      </Grid>
-                    </>
-                  )}
+                  <Grid size={{ xs: 12, md: 3 }}>
+                    <TextField fullWidth type="number" id="edu_hsc_year" name="edu_hsc_year" label={t("HSC Year")} value={formik.values.edu_hsc_year || ""} onChange={formik.handleChange} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 3 }}>
+                    <TextField fullWidth type="number" id="edu_hsc_months" name="edu_hsc_months" label={t("HSC Duration (Months)")} value={formik.values.edu_hsc_months || ""} onChange={formik.handleChange} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 3 }}>
+                    <TextField fullWidth type="number" id="edu_hsc_expected_schedule_year" name="edu_hsc_expected_schedule_year" label={t("HSC Expected Year")} value={formik.values.edu_hsc_expected_schedule_year || ""} onChange={formik.handleChange} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 3 }}>
+                    <TextField fullWidth type="number" id="edu_hsc_expected_schedule_months" name="edu_hsc_expected_schedule_months" label={t("HSC Expected Month Count")} value={formik.values.edu_hsc_expected_schedule_months || ""} onChange={formik.handleChange} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 3 }}>
+                    <TextField fullWidth type="number" id="edu_hsc_exam_conducted_year" name="edu_hsc_exam_conducted_year" label={t("HSC Exam Conducted Year")} value={formik.values.edu_hsc_exam_conducted_year || ""} onChange={formik.handleChange} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 3 }}>
+                    <TextField fullWidth type="number" id="edu_hsc_exam_conducted_months" name="edu_hsc_exam_conducted_months" label={t("HSC Exam Conducted Month Count")} value={formik.values.edu_hsc_exam_conducted_months || ""} onChange={formik.handleChange} />
+                  </Grid>
                   {renderVariableGroup("HSC Variables", hscExtraVariables, "plain")}
 
                   <SectionLabel>{t("Bachelor / Degree")}</SectionLabel>
@@ -1164,37 +1182,33 @@ export default function StudentUpsert() {
                   <Grid size={{ xs: 12, md: 4 }}>
                     <TextField fullWidth id="name_subject" name="name_subject" label={t("Subject Name")} value={formik.values.name_subject || ""} onChange={formik.handleChange} />
                   </Grid>
-                  {isEdit && (
-                    <>
-                      <Grid size={{ xs: 12, md: 3 }}>
-                        <TextField fullWidth type="number" id="course_completion_year" name="course_completion_year" label={t("Course Completion Year")} value={formik.values.course_completion_year || ""} onChange={formik.handleChange} />
-                      </Grid>
-                      <Grid size={{ xs: 12, md: 3 }}>
-                        <TextField fullWidth type="number" id="course_completion_month" name="course_completion_month" label={t("Course Completion Month")} value={formik.values.course_completion_month || ""} onChange={formik.handleChange} />
-                      </Grid>
-                      <Grid size={{ xs: 12, md: 6 }}>
-                        <TextField fullWidth id="course_under_institution" name="course_under_institution" label={t("Course Under Institution")} value={formik.values.course_under_institution || ""} onChange={formik.handleChange} />
-                      </Grid>
-                      <Grid size={{ xs: 12, md: 4 }}>
-                        <TextField fullWidth id="institution_board" name="institution_board" label={t("Institution Board")} value={formik.values.institution_board || ""} onChange={formik.handleChange} />
-                      </Grid>
-                      <Grid size={{ xs: 12, md: 4 }}>
-                        <TextField fullWidth id="institution_college" name="institution_college" label={t("Institution College")} value={formik.values.institution_college || ""} onChange={formik.handleChange} />
-                      </Grid>
-                      <Grid size={{ xs: 12, md: 4 }}>
-                        <TextField fullWidth id="institution_university" name="institution_university" label={t("Institution University")} value={formik.values.institution_university || ""} onChange={formik.handleChange} />
-                      </Grid>
-                      <Grid size={{ xs: 12, md: 4 }}>
-                        <TextField fullWidth id="institution_national_university" name="institution_national_university" label={t("National University")} value={formik.values.institution_national_university || ""} onChange={formik.handleChange} />
-                      </Grid>
-                      <Grid size={{ xs: 12, md: 4 }}>
-                        <TextField fullWidth id="institution_private_university" name="institution_private_university" label={t("Private University")} value={formik.values.institution_private_university || ""} onChange={formik.handleChange} />
-                      </Grid>
-                      <Grid size={{ xs: 12, md: 4 }}>
-                        <TextField fullWidth id="institution_dhaka_university" name="institution_dhaka_university" label={t("Dhaka University")} value={formik.values.institution_dhaka_university || ""} onChange={formik.handleChange} />
-                      </Grid>
-                    </>
-                  )}
+                  <Grid size={{ xs: 12, md: 3 }}>
+                    <TextField fullWidth type="number" id="course_completion_year" name="course_completion_year" label={t("Course Completion Year")} value={formik.values.course_completion_year || ""} onChange={formik.handleChange} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 3 }}>
+                    <TextField fullWidth type="number" id="course_completion_month" name="course_completion_month" label={t("Course Completion Month")} value={formik.values.course_completion_month || ""} onChange={formik.handleChange} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <TextField fullWidth id="course_under_institution" name="course_under_institution" label={t("Course Under Institution")} value={formik.values.course_under_institution || ""} onChange={formik.handleChange} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <TextField fullWidth id="institution_board" name="institution_board" label={t("Institution Board")} value={formik.values.institution_board || ""} onChange={formik.handleChange} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <TextField fullWidth id="institution_college" name="institution_college" label={t("Institution College")} value={formik.values.institution_college || ""} onChange={formik.handleChange} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <TextField fullWidth id="institution_university" name="institution_university" label={t("Institution University")} value={formik.values.institution_university || ""} onChange={formik.handleChange} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <TextField fullWidth id="institution_national_university" name="institution_national_university" label={t("National University")} value={formik.values.institution_national_university || ""} onChange={formik.handleChange} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <TextField fullWidth id="institution_private_university" name="institution_private_university" label={t("Private University")} value={formik.values.institution_private_university || ""} onChange={formik.handleChange} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <TextField fullWidth id="institution_dhaka_university" name="institution_dhaka_university" label={t("Dhaka University")} value={formik.values.institution_dhaka_university || ""} onChange={formik.handleChange} />
+                  </Grid>
                   {renderVariableGroup("Bachelor / Degree Variables", bachelorExtraVariables, "plain")}
                   {renderVariableGroup("Other Education Variables", otherEducationExtraVariables, "plain")}
 
@@ -1205,16 +1219,12 @@ export default function StudentUpsert() {
                   <Grid size={{ xs: 12, md: 6 }}>
                     <TextField fullWidth id="jp_study_institution_preferred" name="jp_study_institution_preferred" label={t("Preferred Japanese Study Institution")} value={formik.values.jp_study_institution_preferred || ""} onChange={formik.handleChange} />
                   </Grid>
-                  {isEdit && (
-                    <>
-                      <Grid size={{ xs: 12, md: 3 }}>
-                        <TextField fullWidth type="number" id="jp_study_hours" name="jp_study_hours" label={t("Japanese Study Hours")} value={formik.values.jp_study_hours || ""} onChange={formik.handleChange} />
-                      </Grid>
-                      <Grid size={{ xs: 12, md: 3 }}>
-                        <TextField fullWidth type="number" id="jp_study_months" name="jp_study_months" label={t("Japanese Study Months")} value={formik.values.jp_study_months || ""} onChange={formik.handleChange} />
-                      </Grid>
-                    </>
-                  )}
+                  <Grid size={{ xs: 12, md: 3 }}>
+                    <TextField fullWidth type="number" id="jp_study_hours" name="jp_study_hours" label={t("Japanese Study Hours")} value={formik.values.jp_study_hours || ""} onChange={formik.handleChange} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 3 }}>
+                    <TextField fullWidth type="number" id="jp_study_months" name="jp_study_months" label={t("Japanese Study Months")} value={formik.values.jp_study_months || ""} onChange={formik.handleChange} />
+                  </Grid>
                   {renderVariableGroup("Japanese Study Variables", japaneseStudyExtraVariables, "plain")}
 
                   {isEdit && (
