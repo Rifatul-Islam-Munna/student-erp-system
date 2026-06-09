@@ -132,10 +132,25 @@ const findMissingVariables = (template = {}, variableMap = {}) => {
     });
 };
 
+const buildCustomFontCss = (template = {}) => {
+    const customFonts = Array.isArray(template?.customFonts) ? template.customFonts : [];
+
+    return customFonts
+        .filter((font) => font?.family && font?.source)
+        .map((font) => `
+      @font-face {
+        font-family: "${escapeHtml(font.family)}";
+        src: url("${font.source}");
+      }
+    `)
+        .join('\n');
+};
+
 const buildPrintHtml = ({ template, content, title }) => {
     const settings = normalizePageSettings(template?.pageSettings);
     const pageSizeCss = `${settings.widthMm}mm ${settings.heightMm}mm`;
     const pagePaddingCss = `${settings.marginTopMm}mm ${settings.marginRightMm}mm ${settings.marginBottomMm}mm ${settings.marginLeftMm}mm`;
+    const customFontCss = buildCustomFontCss(template);
 
     return `<!doctype html>
 <html lang="en">
@@ -148,6 +163,8 @@ const buildPrintHtml = ({ template, content, title }) => {
         size: ${pageSizeCss};
         margin: 0;
       }
+
+      ${customFontCss}
 
       :root {
         color-scheme: light;
@@ -187,6 +204,7 @@ const buildPrintHtml = ({ template, content, title }) => {
       .ql-editor {
         position: relative;
         min-height: 100%;
+        white-space: normal;
       }
 
       p {
@@ -226,6 +244,94 @@ const buildPrintHtml = ({ template, content, title }) => {
         display: inline-block;
         max-width: 100%;
         height: auto;
+      }
+
+      .ql-align-center {
+        text-align: center;
+      }
+
+      .ql-align-right {
+        text-align: right;
+      }
+
+      .ql-align-justify {
+        text-align: justify;
+      }
+
+      .ql-direction-rtl {
+        direction: rtl;
+        text-align: inherit;
+      }
+
+      .ql-indent-1:not(.ql-direction-rtl) { padding-left: 3em; }
+      .ql-indent-2:not(.ql-direction-rtl) { padding-left: 6em; }
+      .ql-indent-3:not(.ql-direction-rtl) { padding-left: 9em; }
+      .ql-indent-4:not(.ql-direction-rtl) { padding-left: 12em; }
+      .ql-indent-5:not(.ql-direction-rtl) { padding-left: 15em; }
+      .ql-indent-6:not(.ql-direction-rtl) { padding-left: 18em; }
+      .ql-indent-7:not(.ql-direction-rtl) { padding-left: 21em; }
+      .ql-indent-8:not(.ql-direction-rtl) { padding-left: 24em; }
+
+      .ql-indent-1.ql-direction-rtl.ql-align-right { padding-right: 3em; }
+      .ql-indent-2.ql-direction-rtl.ql-align-right { padding-right: 6em; }
+      .ql-indent-3.ql-direction-rtl.ql-align-right { padding-right: 9em; }
+      .ql-indent-4.ql-direction-rtl.ql-align-right { padding-right: 12em; }
+      .ql-indent-5.ql-direction-rtl.ql-align-right { padding-right: 15em; }
+      .ql-indent-6.ql-direction-rtl.ql-align-right { padding-right: 18em; }
+      .ql-indent-7.ql-direction-rtl.ql-align-right { padding-right: 21em; }
+      .ql-indent-8.ql-direction-rtl.ql-align-right { padding-right: 24em; }
+
+      .ql-size-small {
+        font-size: 0.75em;
+      }
+
+      .ql-size-large {
+        font-size: 1.5em;
+      }
+
+      .ql-size-huge {
+        font-size: 2.5em;
+      }
+
+      .ql-font-serif {
+        font-family: Georgia, Times New Roman, serif;
+      }
+
+      .ql-font-monospace {
+        font-family: Consolas, Monaco, monospace;
+      }
+
+      .ql-script-sub {
+        vertical-align: sub;
+        font-size: 0.75em;
+      }
+
+      .ql-script-super {
+        vertical-align: super;
+        font-size: 0.75em;
+      }
+
+      .ql-editor ol li[data-list="ordered"],
+      .ql-editor ul li[data-list="bullet"],
+      .ql-editor ul li[data-list="check"] {
+        list-style-type: none;
+        position: relative;
+      }
+
+      .ql-editor ul li[data-list="bullet"]::before {
+        content: "\\2022";
+        position: absolute;
+        left: -1.25em;
+      }
+
+      .ql-editor ul li[data-list="check"]::before {
+        content: "\\2610";
+        position: absolute;
+        left: -1.35em;
+      }
+
+      .ql-editor ul li[data-checked="true"]::before {
+        content: "\\2611";
       }
 
       @media print {

@@ -376,11 +376,31 @@ const mapStudentToFormValues = (student: Student): Partial<Student> => {
   };
 };
 
+const getRelationId = (value: any) => {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "object" && value._id) return value._id;
+  return "";
+};
+
+const buildStudentPayload = (values: Partial<Student>) => ({
+  ...values,
+  branch: getRelationId(values.branch),
+  counselor: getRelationId(values.counselor),
+  agent: getRelationId(values.agent),
+  partnerAgency: getRelationId(values.partnerAgency),
+  batch: getRelationId(values.batch),
+});
+
+const toIsoString = (value: Date) => value.toISOString();
+const DEV_AUTOFILL_STORAGE_KEY = "student-create-dev-autofill";
+
 export default function StudentUpsert() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { role, id } = useParams();
   const isEdit = Boolean(id);
+  const isDevCreate = import.meta.env.DEV && !isEdit;
 
   const [tabValue, setTabValue] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -470,7 +490,7 @@ export default function StudentUpsert() {
       setLoading(true);
       try {
         const payload = {
-          ...values,
+          ...buildStudentPayload(values),
           docVariables: {
             ...(values.docVariables || {}),
             ...Object.fromEntries(Object.entries(buildDerivedDocVariables(values)).filter(([, value]) => value)),
@@ -480,6 +500,9 @@ export default function StudentUpsert() {
           await StudentService.updateStudent(id, payload);
         } else {
           await StudentService.createStudent(payload);
+          if (import.meta.env.DEV) {
+            window.localStorage.removeItem(DEV_AUTOFILL_STORAGE_KEY);
+          }
         }
         navigate(`/${role}/students`);
       } catch (error) {
@@ -499,7 +522,10 @@ export default function StudentUpsert() {
       try {
         const response = await StudentService.getStudentById(id);
         if (response.success && response.data) {
-          formik.setValues({ ...formik.initialValues, ...mapStudentToFormValues(response.data) });
+          formik.setValues({
+            ...formik.initialValues,
+            ...buildStudentPayload(mapStudentToFormValues(response.data)),
+          });
         }
       } catch (error) {
         console.error("Failed to fetch student", error);
@@ -509,6 +535,23 @@ export default function StudentUpsert() {
     fetchStudent();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEdit, id]);
+
+  useEffect(() => {
+    if (!isDevCreate) return;
+
+    try {
+      const savedValues = window.localStorage.getItem(DEV_AUTOFILL_STORAGE_KEY);
+      if (!savedValues) return;
+
+      formik.setValues({
+        ...formik.initialValues,
+        ...JSON.parse(savedValues),
+      });
+    } catch (error) {
+      console.error("Failed to restore dev autofill draft", error);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDevCreate]);
 
   const addEmployment = () => {
     const employment = formik.values.employment || [];
@@ -533,6 +576,155 @@ export default function StudentUpsert() {
     const items = [...(formik.values.languageTest || [])];
     items.splice(index, 1);
     formik.setFieldValue("languageTest", items);
+  };
+
+  const autofillDevStudent = async () => {
+    if (!isDevCreate) return;
+
+    const { faker } = await import("@faker-js/faker");
+    const gender = faker.helpers.arrayElement<Student["gender"]>(["male", "female", "other"]);
+    const maritalStatus = faker.helpers.arrayElement<NonNullable<Student["maritalStatus"]>>([
+      "single",
+      "married",
+      "divorced",
+      "widowed",
+    ]);
+    const studentType = faker.helpers.arrayElement<NonNullable<Student["studentType"]>>(["own", "partner"]);
+    const firstName = faker.person.firstName(gender === "other" ? undefined : gender);
+    const lastName = faker.person.lastName(gender === "other" ? undefined : gender);
+    const fullNameEn = faker.person.fullName({
+      firstName,
+      lastName,
+      sex: gender === "other" ? undefined : gender,
+    });
+    const dob = faker.date.birthdate({ min: 18, max: 30, mode: "age" });
+    const passportIssueDate = faker.date.between({
+      from: dayjs(dob).add(18, "year").toDate(),
+      to: new Date(),
+    });
+    const passportExpiryDate = faker.date.future({ years: 5, refDate: passportIssueDate });
+    const birthCertificateDate = faker.date.between({ from: dob, to: dayjs(dob).add(2, "year").toDate() });
+    const sscYear = faker.number.int({ min: 2014, max: 2019 });
+    const hscYear = sscYear + 2;
+    const completionYear = hscYear + faker.number.int({ min: 3, max: 5 });
+    const completionMonth = faker.number.int({ min: 1, max: 12 });
+    const jpStudyMonths = faker.number.int({ min: 6, max: 18 });
+    const jpStudyHours = jpStudyMonths * faker.number.int({ min: 16, max: 24 });
+    const permanentAddress = `${faker.location.streetAddress()}, ${faker.location.city()}, ${faker.location.country()}`;
+    const currentAddressSameAsPermanent = faker.datatype.boolean();
+    const currentAddress = currentAddressSameAsPermanent
+      ? permanentAddress
+      : `${faker.location.streetAddress()}, ${faker.location.city()}, ${faker.location.country()}`;
+    const companyStartDate = faker.date.past({ years: 4 });
+    const companyEndDate = faker.date.between({ from: companyStartDate, to: new Date() });
+    const examDate = faker.date.recent({ days: 240 });
+    const intakeYear = new Date().getFullYear() + 1;
+    const email = faker.internet.email({ firstName, lastName }).toLowerCase();
+    const username = faker.internet.username({ firstName, lastName });
+
+    const autofillValues = {
+      ...formik.initialValues,
+      fullNameEn,
+      name_bd: fullNameEn,
+      nameKatakana: `${firstName} ${lastName}`.toUpperCase(),
+      phone: faker.phone.number("01#########"),
+      whatsapp: faker.phone.number("01#########"),
+      lineapp: username,
+      facebookprofile: `https://facebook.com/${username.toLowerCase()}`,
+      guardianPhone: faker.phone.number("01#########"),
+      email,
+      dob: toIsoString(dob),
+      gender,
+      maritalStatus,
+      nationality: "Bangladeshi",
+      birth_place: faker.location.city(),
+      bloodGroup: faker.helpers.arrayElement(["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]),
+      nationalId: faker.string.numeric(10),
+      passportNo: `${faker.string.alpha({ length: 2, casing: "upper" })}${faker.string.numeric(7)}`,
+      passportIssueDate: toIsoString(passportIssueDate),
+      passportExpiryDate: toIsoString(passportExpiryDate),
+      bc_date_of_registration: toIsoString(birthCertificateDate),
+      bc_date_of_issuance: toIsoString(faker.date.between({ from: birthCertificateDate, to: new Date() })),
+      occupation: faker.person.jobTitle(),
+      spouseName: maritalStatus === "married" ? faker.person.fullName() : "",
+      father_name_en: faker.person.fullName({ sex: "male" }),
+      mother_name_en: faker.person.fullName({ sex: "female" }),
+      sponsor_name_en: faker.person.fullName(),
+      sponsor_relationship: faker.helpers.arrayElement(["Father", "Mother", "Brother", "Uncle"]),
+      emergencyContact: faker.person.fullName(),
+      emergencyPhone: faker.phone.number("01#########"),
+      permanentAddress,
+      currentAddressSameAsPermanent,
+      currentAddress,
+      employment: [
+        {
+          companyName: faker.company.name(),
+          address: `${faker.location.streetAddress()}, ${faker.location.city()}`,
+          position: faker.person.jobTitle(),
+          startDate: toIsoString(companyStartDate),
+          endDate: toIsoString(companyEndDate),
+        },
+      ],
+      languageTest: [
+        {
+          examType: "JLPT",
+          level: faker.helpers.arrayElement(["N5", "N4", "N3"]),
+          examDate: toIsoString(examDate),
+          score: String(faker.number.int({ min: 80, max: 170 })),
+          result: faker.helpers.arrayElement(["Pass", "Pending"]),
+        },
+      ],
+      visaType: faker.helpers.arrayElement(["Student Visa", "Language Student"]),
+      country: "Japan",
+      schoolName: faker.helpers.arrayElement([
+        "Tokyo International Language Academy",
+        "Osaka Japanese Institute",
+        "Kyoto Language Center",
+      ]),
+      intake: `${faker.helpers.arrayElement(["April", "July", "October"])} ${intakeYear}`,
+      expectedIntake: `${faker.helpers.arrayElement(["April", "July", "October"])} ${intakeYear}`,
+      source: faker.helpers.arrayElement(["Facebook", "Referral", "Walk-in", "Website"]),
+      status: faker.helpers.arrayElement(["New Lead", "Processing", "Applied"]),
+      applicationType: faker.helpers.arrayElement(["University", "Language School"]),
+      studentType,
+      edu_ssc_school: `${faker.location.city()} High School`,
+      edu_ssc_board: faker.helpers.arrayElement(["Dhaka", "Rajshahi", "Cumilla", "Chattogram"]),
+      edu_ssc_subject: faker.helpers.arrayElement(["Science", "Business Studies", "Humanities"]),
+      edu_ssc_year: sscYear,
+      edu_ssc_months: 12,
+      edu_hsc_school: `${faker.location.city()} College`,
+      edu_hsc_board: faker.helpers.arrayElement(["Dhaka", "Rajshahi", "Cumilla", "Chattogram"]),
+      edu_hsc_subject: faker.helpers.arrayElement(["Science", "Business Studies", "Humanities"]),
+      edu_hsc_year: hscYear,
+      edu_hsc_months: 24,
+      edu_hsc_expected_schedule_year: hscYear,
+      edu_hsc_expected_schedule_months: 12,
+      edu_hsc_exam_conducted_year: hscYear,
+      edu_hsc_exam_conducted_months: 1,
+      edu_bachelor_degree_subject: faker.helpers.arrayElement(["Computer Science", "Business Administration", "English"]),
+      jp_study_institution: faker.helpers.arrayElement(["Mirai Japanese School", "Sakura Language Point"]),
+      jp_study_institution_preferred: faker.helpers.arrayElement(["Nexus Japanese Language Academy", "Aim Education"]),
+      jp_study_hours,
+      jp_study_months,
+      name_course: faker.helpers.arrayElement(["Bachelor Program", "Diploma Program"]),
+      name_subject: faker.helpers.arrayElement(["Computer Science", "Accounting", "English"]),
+      course_completion_year: completionYear,
+      course_completion_month: completionMonth,
+      course_under_institution: faker.helpers.arrayElement(["National University", "Private University"]),
+      institution_board: faker.helpers.arrayElement(["Dhaka", "Rajshahi", "Cumilla", "Chattogram"]),
+      institution_college: `${faker.location.city()} Government College`,
+      institution_university: `${faker.location.city()} University`,
+      institution_national_university: "National University",
+      institution_private_university: `${faker.location.city()} Private University`,
+      institution_dhaka_university: "University of Dhaka",
+      docVariables: {},
+      explanationChecks: {},
+      googleDriveLink: faker.internet.url(),
+      internalNotes: faker.lorem.sentences(2),
+    };
+
+    formik.setValues(autofillValues);
+    window.localStorage.setItem(DEV_AUTOFILL_STORAGE_KEY, JSON.stringify(autofillValues));
   };
 
   const managedDocVariableKeys = new Set(Object.keys(derivedDocVariables).filter((key) => derivedDocVariables[key] !== undefined));
@@ -657,14 +849,21 @@ export default function StudentUpsert() {
               <Typography color="text.primary">{isEdit ? t("Edit") : t("Create")}</Typography>
             </Breadcrumbs>
           </Box>
-          <Button
-            variant="text"
-            color="grey"
-            startIcon={<NiArrowLeft size="medium" />}
-            onClick={() => navigate(`/${role}/students`)}
-          >
-            {t("Back to List")}
-          </Button>
+          <Box className="flex items-center gap-2">
+            {isDevCreate && (
+              <Button variant="outlined" onClick={autofillDevStudent}>
+                Dev Auto Fill
+              </Button>
+            )}
+            <Button
+              variant="text"
+              color="grey"
+              startIcon={<NiArrowLeft size="medium" />}
+              onClick={() => navigate(`/${role}/students`)}
+            >
+              {t("Back to List")}
+            </Button>
+          </Box>
         </Box>
 
         <form onSubmit={formik.handleSubmit}>

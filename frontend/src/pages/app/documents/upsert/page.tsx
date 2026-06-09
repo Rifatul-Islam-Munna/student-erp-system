@@ -81,7 +81,7 @@ import NiTextRight from "@/icons/nexture/ni-text-right";
 import NiTextStrikethrough from "@/icons/nexture/ni-text-strikethrough";
 import NiTextUnderline from "@/icons/nexture/ni-text-underline";
 import { DocumentService } from "@/services/documentService";
-import { DocumentPageSettings, DocumentTemplate, DocumentVariableDefinition } from "@/types/document";
+import { DocumentCustomFont, DocumentPageSettings, DocumentTemplate, DocumentVariableDefinition } from "@/types/document";
 
 const validationSchema = yup.object({
   name: yup.string().required("Title is required"),
@@ -150,6 +150,7 @@ const preparePayload = (values: Partial<DocumentTemplate>) => ({
   templateContent: values.templateContent || "",
   shortcodes: extractVariables(values.templateContent || ""),
   description: values.description || "",
+  customFonts: Array.isArray(values.customFonts) ? values.customFonts : [],
   status: values.status || "draft",
   isActive: Boolean(values.isActive),
   pageSettings: normalizePageSettings(values.pageSettings),
@@ -461,11 +462,7 @@ type SelectedShapeFrame = {
   height: number;
 };
 
-type UploadedFontOption = {
-  family: string;
-  label: string;
-  source: string;
-};
+type UploadedFontOption = DocumentCustomFont;
 
 type EditorSelectionRange = {
   index: number;
@@ -941,6 +938,7 @@ export default function DocumentUpsert() {
             ...documentData,
             pageSettings: normalizePageSettings(documentData.pageSettings),
           });
+          setUploadedFonts(Array.isArray(documentData.customFonts) ? documentData.customFonts : []);
         }
       } catch (error) {
         console.error("Failed to fetch document", error);
@@ -1316,7 +1314,9 @@ export default function DocumentUpsert() {
 
       setUploadedFonts((current) => {
         const withoutSameLabel = current.filter((font) => font.label !== label);
-        return [...withoutSameLabel, nextFont];
+        const nextFonts = [...withoutSameLabel, nextFont];
+        formik.setFieldValue("customFonts", nextFonts);
+        return nextFonts;
       });
 
       window.setTimeout(() => applyFontFamily(family), 0);

@@ -7,6 +7,13 @@ export const createDocumentTemplateSchema = Joi.object({
     templateContent: Joi.string().allow('', null),
     shortcodes: Joi.array().items(Joi.string()).default([]),
     description: Joi.string().allow('', null).trim(),
+    customFonts: Joi.array().items(
+        Joi.object({
+            family: Joi.string().required().trim(),
+            label: Joi.string().required().trim(),
+            source: Joi.string().required()
+        })
+    ).default([]),
     status: Joi.string().valid('draft', 'active', 'inactive').default('draft'),
     isActive: Joi.boolean().default(true),
     pageSettings: Joi.object({
@@ -28,6 +35,13 @@ export const updateDocumentTemplateSchema = Joi.object({
     templateContent: Joi.string().allow('', null).optional(),
     shortcodes: Joi.array().items(Joi.string()).optional(),
     description: Joi.string().allow('', null).trim().optional(),
+    customFonts: Joi.array().items(
+        Joi.object({
+            family: Joi.string().required().trim(),
+            label: Joi.string().required().trim(),
+            source: Joi.string().required()
+        })
+    ).optional(),
     status: Joi.string().valid('draft', 'active', 'inactive').optional(),
     isActive: Joi.boolean().optional(),
     pageSettings: Joi.object({

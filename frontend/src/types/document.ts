@@ -21,6 +21,12 @@ export interface DocumentVariableDefinition {
   source?: string;
 }
 
+export interface DocumentCustomFont {
+  family: string;
+  label: string;
+  source: string;
+}
+
 export interface DocumentTemplate {
   _id?: string;
   name: string;
@@ -29,6 +35,7 @@ export interface DocumentTemplate {
   shortcodes: string[];
   description?: string;
   fileType?: string;
+  customFonts?: DocumentCustomFont[];
   originalFileName?: string;
   originalFilePath?: string;
   status: DocumentStatus;

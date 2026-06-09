@@ -11,6 +11,17 @@ export const documentTemplateResponseSchema = {
         templateContent: { type: 'string' },
         shortcodes: { type: 'array', items: { type: 'string' } },
         description: { type: 'string' },
+        customFonts: {
+            type: 'array',
+            items: {
+                type: 'object',
+                properties: {
+                    family: { type: 'string' },
+                    label: { type: 'string' },
+                    source: { type: 'string' }
+                }
+            }
+        },
         isActive: { type: 'boolean' },
         pageSettings: {
             type: 'object',

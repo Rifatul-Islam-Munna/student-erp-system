@@ -37,6 +37,25 @@ const documentTemplateSchema = new mongoose.Schema({
         type: String,
         trim: true
     },
+    customFonts: {
+        type: [{
+            family: {
+                type: String,
+                required: true,
+                trim: true
+            },
+            label: {
+                type: String,
+                required: true,
+                trim: true
+            },
+            source: {
+                type: String,
+                required: true
+            }
+        }],
+        default: []
+    },
     status: {
         type: String,
         enum: ['draft', 'active', 'inactive'],
