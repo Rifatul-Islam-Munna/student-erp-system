@@ -213,6 +213,11 @@ const buildPrintHtml = ({ template, content, title }) => {
         line-height: 1.65;
       }
 
+      .page,
+      .ql-editor {
+        color: #000000;
+      }
+
       h1, h2, h3, h4, h5, h6 {
         margin: 0 0 14px;
         line-height: 1.2;
