@@ -19,7 +19,6 @@ import {
 
 import { SYSTEM_DOCUMENT_VARIABLES } from "@/constants/documentVariables";
 import NiArrowLeft from "@/icons/nexture/ni-arrow-left";
-import NiDownloadCloud from "@/icons/nexture/ni-download-cloud";
 import NiPen from "@/icons/nexture/ni-pen";
 import NiPrinter from "@/icons/nexture/ni-printer";
 import { DocumentService } from "@/services/documentService";
@@ -39,7 +38,6 @@ export default function DocumentView() {
   const [document, setDocument] = useState<DocumentTemplate | null>(null);
   const [loading, setLoading] = useState(true);
   const [studentId, setStudentId] = useState("");
-  const [downloadToken, setDownloadToken] = useState("");
   const [generateError, setGenerateError] = useState("");
   const [generating, setGenerating] = useState(false);
 
@@ -82,15 +80,13 @@ export default function DocumentView() {
     setGenerating(true);
 
     try {
-      const response = await DocumentService.generateDocument({
-        templateId: document._id,
-        studentId: document.docType === "student" ? studentId.trim() : undefined,
-      });
-
-      if (response.success && response.downloadToken) {
-        setDownloadToken(response.downloadToken);
-        await DocumentService.downloadGeneratedPdf(response.downloadToken, document.name);
-      }
+      await DocumentService.generateAndDownloadPdf(
+        {
+          templateId: document._id,
+          studentId: document.docType === "student" ? studentId.trim() : undefined,
+        },
+        document.name,
+      );
     } catch (error) {
       console.error("Failed to generate document", error);
       setGenerateError("Failed to generate document");
@@ -162,11 +158,6 @@ export default function DocumentView() {
                 />
               )}
               {generateError && <Alert severity="error">{t(generateError)}</Alert>}
-              {downloadToken && (
-                <Button fullWidth variant="surface" color="primary" startIcon={<NiDownloadCloud size="medium" />} onClick={() => void DocumentService.downloadGeneratedPdf(downloadToken, document?.name || "document")}>
-                  {t("Download PDF")}
-                </Button>
-              )}
               <Typography variant="body2" color="text.secondary">
                 {document.docType === "student"
                   ? t("Student template replaces student variables before download.")

@@ -559,7 +559,7 @@ export const generateDocument = async (request, reply) => {
             title: student ? `${template.name} - ${student.fullNameEn}` : template.name
         });
 
-        // Generate PDF using Puppeteer
+        // Generate PDF in memory using Puppeteer
         const settings = normalizePageSettings(template?.pageSettings);
         browser = await puppeteer.launch({
             headless: true,
@@ -579,30 +579,12 @@ export const generateDocument = async (request, reply) => {
         await browser.close();
         browser = null;
 
-        const token = crypto.randomUUID();
+        // Send PDF directly in the response
         const fileName = `${template.name.replace(/[^a-z0-9_-]+/gi, '_')}_${Date.now()}.pdf`;
-        const filePath = path.join(GENERATED_DIR, fileName);
-        fs.writeFileSync(filePath, pdfBuffer);
-
-        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-        await GeneratedDocument.create({
-            template: template._id,
-            student: student?._id || null,
-            filePath,
-            fileName,
-            contentType: 'application/pdf',
-            fileExtension: 'pdf',
-            downloadToken: token,
-            expiresAt,
-            generatedBy: request.user?.id || null
-        });
-
-        return reply.send({
-            success: true,
-            message: 'Document generated successfully.',
-            downloadToken: token,
-            expiresAt: expiresAt.toISOString()
-        });
+        reply.header('Content-Type', 'application/pdf');
+        reply.header('Content-Disposition', `attachment; filename="${fileName}"`);
+        reply.header('Content-Length', pdfBuffer.length);
+        return reply.send(Buffer.from(pdfBuffer));
     } catch (error) {
         if (browser) {
             try { await browser.close(); } catch (_) { /* ignore */ }

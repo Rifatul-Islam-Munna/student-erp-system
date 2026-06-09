@@ -1,5 +1,5 @@
 import { fetchApi } from "@/lib/api";
-import { DocumentQuery, DocumentTemplate, GenerateDocumentResponse } from "@/types/document";
+import { DocumentQuery, DocumentTemplate } from "@/types/document";
 
 export const DocumentService = {
   getDocuments: async (query: DocumentQuery = {}) => {
@@ -89,27 +89,28 @@ export const DocumentService = {
     return fetchApi("/documents/shortcodes");
   },
 
-  generateDocument: async (data: { templateId: string; studentId?: string }): Promise<GenerateDocumentResponse> => {
-    return fetchApi("/documents/generate", {
+  generateAndDownloadPdf: async (data: { templateId: string; studentId?: string }, fileName: string) => {
+    const token = localStorage.getItem("auth_token");
+    const apiBase = import.meta.env.VITE_API_URL || "http://localhost:3000/api/v1";
+
+    const response = await fetch(`${apiBase}/documents/generate`, {
       method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+      },
       body: JSON.stringify(data),
     });
-  },
 
-  downloadGeneratedPdf: async (downloadToken: string, fileName: string) => {
-    const apiBase = import.meta.env.VITE_API_URL || "http://localhost:3000/api/v1";
-    const response = await fetch(`${apiBase}/documents/download/${downloadToken}`);
-
-    if (!response.ok) throw new Error("Failed to download PDF");
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const error = new Error(errorData.message || "Failed to generate document") as Error & Record<string, any>;
+      Object.assign(error, errorData);
+      throw error;
+    }
 
     const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = fileName.endsWith(".pdf") ? fileName : `${fileName}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
+    const { saveAs } = await import("file-saver");
+    saveAs(blob, fileName.endsWith(".pdf") ? fileName : `${fileName}.pdf`);
   },
 };

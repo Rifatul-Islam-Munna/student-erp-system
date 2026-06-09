@@ -225,19 +225,12 @@ export default function StudentsIndex() {
 
     setGeneratingTemplateId(template._id);
     try {
-      const response = await DocumentService.generateDocument({
-        templateId: template._id,
-        studentId: documentStudent._id,
-      });
-
-      if (response.downloadToken) {
-        await DocumentService.downloadGeneratedPdf(
-          response.downloadToken,
-          `${template.name} - ${documentStudent.fullNameEn}`,
-        );
-        enqueueSnackbar(t("PDF downloaded successfully."), { variant: "success" });
-        closeDocumentDialog();
-      }
+      await DocumentService.generateAndDownloadPdf(
+        { templateId: template._id, studentId: documentStudent._id },
+        `${template.name} - ${documentStudent.fullNameEn}`,
+      );
+      enqueueSnackbar(t("PDF downloaded successfully."), { variant: "success" });
+      closeDocumentDialog();
     } catch (error: any) {
       const missingVariables = Array.isArray(error?.missingVariables) ? error.missingVariables : [];
       const missingCount = Number(error?.missingCount) || missingVariables.length;
