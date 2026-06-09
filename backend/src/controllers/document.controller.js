@@ -169,10 +169,14 @@ const buildPrintHtml = ({ template, content, title }) => {
 
       :root {
         color-scheme: light;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
       }
 
       * {
         box-sizing: border-box;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
       }
 
       body {
@@ -180,6 +184,9 @@ const buildPrintHtml = ({ template, content, title }) => {
         background: #d8dee8;
         font-family: Mulish, Arial, sans-serif;
         color: #172033;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        text-rendering: geometricPrecision;
       }
 
       .page-shell {
@@ -216,6 +223,10 @@ const buildPrintHtml = ({ template, content, title }) => {
       .page,
       .ql-editor {
         color: #000000;
+      }
+
+      .ql-editor * {
+        text-rendering: geometricPrecision;
       }
 
       h1, h2, h3, h4, h5, h6 {
@@ -572,6 +583,11 @@ export const generateDocument = async (request, reply) => {
         });
         const page = await browser.newPage();
         await page.setContent(renderedHtml, { waitUntil: 'networkidle0', timeout: 30000 });
+        await page.evaluate(async () => {
+            if (document.fonts?.ready) {
+                await document.fonts.ready;
+            }
+        });
 
         const pdfBuffer = await page.pdf({
             width: `${settings.widthMm}mm`,
