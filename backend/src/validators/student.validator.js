@@ -115,6 +115,7 @@ export const studentBaseSchema = {
     applicationType: Joi.string().allow(null, ''),
     studentType: Joi.string().allow(null, ''),
     branch: Joi.string().allow(null, ''),
+    batch: Joi.string().allow(null, ''),
 
     edu_ssc_school: Joi.string().allow(null, ''),
     edu_ssc_board: Joi.string().allow(null, ''),

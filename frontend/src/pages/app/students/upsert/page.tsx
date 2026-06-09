@@ -377,10 +377,10 @@ const mapStudentToFormValues = (student: Student): Partial<Student> => {
 };
 
 const getRelationId = (value: any) => {
-  if (!value) return "";
+  if (!value) return undefined;
   if (typeof value === "string") return value;
   if (typeof value === "object" && value._id) return value._id;
-  return "";
+  return undefined;
 };
 
 const buildStudentPayload = (values: Partial<Student>) => ({
@@ -704,8 +704,8 @@ export default function StudentUpsert() {
       edu_bachelor_degree_subject: faker.helpers.arrayElement(["Computer Science", "Business Administration", "English"]),
       jp_study_institution: faker.helpers.arrayElement(["Mirai Japanese School", "Sakura Language Point"]),
       jp_study_institution_preferred: faker.helpers.arrayElement(["Nexus Japanese Language Academy", "Aim Education"]),
-      jp_study_hours,
-      jp_study_months,
+      jp_study_hours: jpStudyHours,
+      jp_study_months: jpStudyMonths,
       name_course: faker.helpers.arrayElement(["Bachelor Program", "Diploma Program"]),
       name_subject: faker.helpers.arrayElement(["Computer Science", "Accounting", "English"]),
       course_completion_year: completionYear,
@@ -717,11 +717,46 @@ export default function StudentUpsert() {
       institution_national_university: "National University",
       institution_private_university: `${faker.location.city()} Private University`,
       institution_dhaka_university: "University of Dhaka",
-      docVariables: {},
-      explanationChecks: {},
       googleDriveLink: faker.internet.url(),
       internalNotes: faker.lorem.sentences(2),
     };
+
+    const derived = buildDerivedDocVariables(autofillValues);
+    const managedKeys = new Set(Object.keys(derived).filter((k) => derived[k] !== undefined));
+    const remaining = STUDENT_DOC_VARIABLES.filter(
+      (v) => !managedKeys.has(v) && !DUPLICATE_DOC_VARIABLE_PATTERNS.some((p) => v.includes(p))
+    );
+    const docVars: Record<string, string> = {};
+    for (const v of remaining) {
+      const c = v.replace(/^\{\{|\}\}$/g, "").trim().toLowerCase();
+      if (c.includes(":year")) docVars[v] = String(faker.number.int({ min: 2015, max: 2025 }));
+      else if (c.includes(":month")) docVars[v] = String(faker.number.int({ min: 1, max: 12 }));
+      else if (c.includes(":day")) docVars[v] = String(faker.number.int({ min: 1, max: 28 }));
+      else if (c.includes("phone") || c.includes("mobile")) docVars[v] = faker.phone.number("01#########");
+      else if (c.includes("father") || c.includes("mother")) docVars[v] = faker.person.fullName();
+      else if (c.includes("occupation")) docVars[v] = faker.person.jobTitle();
+      else if (c.includes("address") || c.includes("location") || c.includes("upozila") || c.includes("district") || c.includes("parishad") || c.includes("paurashava") || c.includes("union") || c.includes("corporat")) docVars[v] = `${faker.location.city()}, ${faker.location.country()}`;
+      else if (c.includes("code") || (c.includes("number") && !c.includes("phone"))) docVars[v] = faker.string.numeric(10);
+      else if (c.includes("reason") || c.includes("gap") || c.includes("delay")) docVars[v] = faker.helpers.arrayElement(["Medical reason", "Family issue", "COVID-19 pandemic"]);
+      else if (c.includes("batch") || c.includes("time")) docVars[v] = faker.helpers.arrayElement(["Morning", "Evening"]);
+      else if (c.includes("authority") || c.includes("issue from")) docVars[v] = `${faker.location.city()} Government Office`;
+      else if (c.includes("duration") || c.includes("hours") || c.includes("years") || c.includes("months")) docVars[v] = String(faker.number.int({ min: 1, max: 5 }));
+      else if (c.includes("present status") || c.includes("expected graduation")) docVars[v] = String(faker.number.int({ min: 2020, max: 2026 }));
+      else if (c.includes("adm")) docVars[v] = String(faker.number.int({ min: 2018, max: 2022 }));
+      else docVars[v] = faker.lorem.word();
+    }
+    for (const config of EXPLANATION_CONFIGS) {
+      for (const v of config.variables) {
+        if (!docVars[v]) {
+          const c2 = v.replace(/^\{\{|\}\}$/g, "").trim().toLowerCase();
+          if (c2.includes(":year")) docVars[v] = String(faker.number.int({ min: 2015, max: 2025 }));
+          else if (c2.includes(":month")) docVars[v] = String(faker.number.int({ min: 1, max: 12 }));
+          else docVars[v] = faker.lorem.word();
+        }
+      }
+    }
+    autofillValues.docVariables = docVars;
+    autofillValues.explanationChecks = Object.fromEntries(EXPLANATION_CONFIGS.map((c) => [c.id, true]));
 
     formik.setValues(autofillValues);
     window.localStorage.setItem(DEV_AUTOFILL_STORAGE_KEY, JSON.stringify(autofillValues));

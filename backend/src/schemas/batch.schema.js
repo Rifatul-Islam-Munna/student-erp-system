@@ -106,7 +106,12 @@ export const createBatchSwagger = {
             branch: { type: 'string' },
             classDays: { type: 'array', items: { type: 'string', enum: ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] } },
             classTime: { type: 'string' },
-            classDuration: { type: 'number' }
+            classDuration: { type: 'number' },
+            courseName: { type: 'string' },
+            status: { type: 'string' },
+            enrolledStudents: { type: 'number' },
+            fees: { type: 'number' },
+            description: { type: 'string' }
         }
     },
     response: {
@@ -144,7 +149,12 @@ export const updateBatchSwagger = {
             branch: { type: 'string' },
             classDays: { type: 'array', items: { type: 'string', enum: ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] } },
             classTime: { type: 'string' },
-            classDuration: { type: 'number' }
+            classDuration: { type: 'number' },
+            courseName: { type: 'string' },
+            status: { type: 'string' },
+            enrolledStudents: { type: 'number' },
+            fees: { type: 'number' },
+            description: { type: 'string' }
         }
     },
     response: {

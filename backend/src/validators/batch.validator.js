@@ -16,7 +16,12 @@ export const createBatchSchema = Joi.object({
     branch: Joi.string().trim().optional().allow(null, ''),
     classDays: Joi.array().items(Joi.string().valid('Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday')).optional().default([]),
     classTime: Joi.string().trim().optional().allow(null, ''),
-    classDuration: Joi.number().min(0.5).optional().allow(null, '')
+    classDuration: Joi.number().min(0.5).optional().allow(null, ''),
+    courseName: Joi.string().trim().optional().allow(null, ''),
+    status: Joi.string().trim().optional().allow(null, ''),
+    enrolledStudents: Joi.number().min(0).optional().allow(null, ''),
+    fees: Joi.number().min(0).optional().allow(null, ''),
+    description: Joi.string().trim().optional().allow(null, '')
 });
 
 export const updateBatchSchema = Joi.object({
@@ -32,7 +37,12 @@ export const updateBatchSchema = Joi.object({
     branch: Joi.string().trim().optional().allow(null, ''),
     classDays: Joi.array().items(Joi.string().valid('Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday')).optional(),
     classTime: Joi.string().trim().optional().allow(null, ''),
-    classDuration: Joi.number().min(0.5).optional().allow(null, '')
+    classDuration: Joi.number().min(0.5).optional().allow(null, ''),
+    courseName: Joi.string().trim().optional().allow(null, ''),
+    status: Joi.string().trim().optional().allow(null, ''),
+    enrolledStudents: Joi.number().min(0).optional().allow(null, ''),
+    fees: Joi.number().min(0).optional().allow(null, ''),
+    description: Joi.string().trim().optional().allow(null, '')
 });
 
 export const queryBatchSchema = Joi.object({

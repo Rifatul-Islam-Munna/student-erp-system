@@ -75,11 +75,14 @@ export default function BatchUpsert() {
     onSubmit: async (values) => {
       setLoading(true);
       try {
-        const data = {
-          ...values,
+        const data: Record<string, any> = {
+          batchName: values.name,
           startDate: values.startDate ? new Date(values.startDate as any) : undefined,
           endDate: values.endDate ? new Date(values.endDate as any) : undefined,
         };
+        if (values.timing) data.classTime = values.timing;
+        if (values.maxStudents) data.maxStudents = values.maxStudents;
+        if (values.description) data.description = values.description;
         
         if (isEdit && id) {
           await BatchService.updateBatch(id, data);
@@ -104,7 +107,14 @@ export default function BatchUpsert() {
             const batch = response.data;
             formik.setValues({
               ...formik.initialValues,
-              ...batch,
+              name: batch.batchName || "",
+              courseName: batch.courseName || "",
+              timing: batch.classTime || "",
+              status: batch.status || "upcoming",
+              maxStudents: batch.maxStudents,
+              enrolledStudents: batch.enrolledStudents,
+              fees: batch.fees,
+              description: batch.description || "",
               startDate: batch.startDate ? dayjs(batch.startDate) : null,
               endDate: batch.endDate ? dayjs(batch.endDate) : null,
             });
