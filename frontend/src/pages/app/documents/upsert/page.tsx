@@ -31,6 +31,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import type { TextFieldProps } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 
 import {
@@ -471,6 +472,13 @@ type EditorSelectionRange = {
   length: number;
 };
 
+type ClearableNumberFieldProps = Omit<TextFieldProps, "value" | "onChange" | "type"> & {
+  value: number;
+  fallbackValue: number;
+  onCommit: (value: number) => void;
+  normalize?: (value: number) => number;
+};
+
 const FONT_UPLOAD_ACCEPT = ".ttf,.otf,.woff,.woff2";
 
 const getAngleFromCenter = (centerX: number, centerY: number, clientX: number, clientY: number) =>
@@ -490,6 +498,51 @@ const readFileAsDataUrl = (file: File) =>
     reader.onerror = () => reject(new Error("Failed to read font file"));
     reader.readAsDataURL(file);
   });
+
+function ClearableNumberField({
+  value,
+  fallbackValue,
+  onCommit,
+  normalize,
+  onFocus,
+  onBlur,
+  ...props
+}: ClearableNumberFieldProps) {
+  const [draftValue, setDraftValue] = useState(String(value));
+  const [isFocused, setIsFocused] = useState(false);
+
+  useEffect(() => {
+    if (!isFocused) {
+      setDraftValue(String(value));
+    }
+  }, [value, isFocused]);
+
+  return (
+    <TextField
+      {...props}
+      type="number"
+      value={draftValue}
+      onFocus={(event) => {
+        setIsFocused(true);
+        onFocus?.(event);
+      }}
+      onChange={(event) => {
+        setDraftValue(event.target.value);
+      }}
+      onBlur={(event) => {
+        setIsFocused(false);
+        const rawValue = event.target.value.trim();
+        const parsedValue = rawValue === "" ? fallbackValue : Number(rawValue);
+        const safeValue = Number.isFinite(parsedValue) ? parsedValue : value;
+        const nextValue = normalize ? normalize(safeValue) : safeValue;
+
+        setDraftValue(String(nextValue));
+        onCommit(nextValue);
+        onBlur?.(event);
+      }}
+    />
+  );
+}
 
 export default function DocumentUpsert() {
   const { t } = useTranslation();
@@ -1627,12 +1680,13 @@ export default function DocumentUpsert() {
               </Box>
 
               <Box
-                className="mb-4 space-y-3 rounded-xl border border-divider p-3"
+                className="mb-4 space-y-3 rounded-xl p-3"
                 sx={{
                   position: "sticky",
                   top: 12,
                   zIndex: 20,
                   backgroundColor: theme.palette.background.paper,
+                  boxShadow: "0 10px 30px rgba(0, 0, 0, 0.18)",
                 }}
               >
                 <Box className="flex flex-wrap items-center gap-2">
@@ -1651,7 +1705,7 @@ export default function DocumentUpsert() {
                     ))}
                   </TextField>
                   <Button size="small" variant="surface" color="grey" onClick={() => fontUploadInputRef.current?.click()}>
-                    {t("Upload .ttf/.otf/.woff/.woff2")}
+                    {t("Upload Font")}
                   </Button>
                   <input
                     ref={fontUploadInputRef}
@@ -1714,9 +1768,10 @@ export default function DocumentUpsert() {
 
                 <Box
                   ref={toolbarHostRef}
-                  className="rounded-xl border border-divider p-3"
+                  className="rounded-xl p-2"
                   sx={{
                     minHeight: 72,
+                    backgroundColor: theme.palette.action.hover,
                     "& .ql-toolbar.ql-snow": {
                       display: "flex",
                       flexWrap: "wrap",
@@ -1734,8 +1789,6 @@ export default function DocumentUpsert() {
                       gap: 0.5,
                       px: 1,
                       py: 0.75,
-                      border: "1px solid",
-                      borderColor: "divider",
                       borderRadius: 2,
                       backgroundColor: theme.palette.background.paper,
                     },
@@ -1808,8 +1861,8 @@ export default function DocumentUpsert() {
                                 {t("Abs")}
                               </Button>
                             </Box>
-                            <TextField fullWidth size="small" type="number" label={t("Width")} value={selectedImage.width} onChange={(event) => applyImageState({ ...selectedImage, width: Number(event.target.value) || 40 })} />
-                            <TextField fullWidth size="small" type="number" label={t("Opacity")} value={Math.round(selectedImage.opacity * 100)} onChange={(event) => applyImageState({ ...selectedImage, opacity: Math.max(0.05, Math.min(1, (Number(event.target.value) || 100) / 100)) })} InputProps={{ endAdornment: <InputAdornment position="end">%</InputAdornment> }} />
+                            <ClearableNumberField fullWidth size="small" label={t("Width")} value={selectedImage.width} fallbackValue={40} normalize={(value) => Math.max(40, value)} onCommit={(value) => applyImageState({ ...selectedImage, width: value })} />
+                            <ClearableNumberField fullWidth size="small" label={t("Opacity")} value={Math.round(selectedImage.opacity * 100)} fallbackValue={100} normalize={(value) => Math.max(5, Math.min(100, Math.round(value)))} onCommit={(value) => applyImageState({ ...selectedImage, opacity: value / 100 })} InputProps={{ endAdornment: <InputAdornment position="end">%</InputAdornment> }} />
                             <Button fullWidth size="small" variant="surface" color="grey" onClick={() => setImageDialogOpen(true)}>{t("Image Controls")}</Button>
                             <Button fullWidth size="small" color="error" variant="text" startIcon={<NiBinEmpty size="small" />} onClick={removeSelectedImage}>{t("Remove")}</Button>
                           </>
@@ -1817,9 +1870,9 @@ export default function DocumentUpsert() {
                         {selectedShape && (
                           <>
                             <Chip label={t(selectedShape.shape)} color="info" size="small" />
-                            <TextField fullWidth size="small" type="number" label={t("Width")} value={selectedShape.width} onChange={(event) => applyShapeState({ ...selectedShape, width: Number(event.target.value) || 20 })} />
-                            <TextField fullWidth size="small" type="number" label={t(selectedShape.shape === "line" ? "Thickness" : "Height")} value={selectedShape.height} onChange={(event) => applyShapeState({ ...selectedShape, height: Number(event.target.value) || 20 })} />
-                            <TextField fullWidth size="small" type="number" label={t("Opacity")} value={Math.round(selectedShape.opacity * 100)} onChange={(event) => applyShapeState({ ...selectedShape, opacity: Math.max(0.05, Math.min(1, (Number(event.target.value) || 100) / 100)) })} InputProps={{ endAdornment: <InputAdornment position="end">%</InputAdornment> }} />
+                            <ClearableNumberField fullWidth size="small" label={t("Width")} value={selectedShape.width} fallbackValue={20} normalize={(value) => Math.max(20, value)} onCommit={(value) => applyShapeState({ ...selectedShape, width: value })} />
+                            <ClearableNumberField fullWidth size="small" label={t(selectedShape.shape === "line" ? "Thickness" : "Height")} value={selectedShape.height} fallbackValue={20} normalize={(value) => Math.max(20, value)} onCommit={(value) => applyShapeState({ ...selectedShape, height: value })} />
+                            <ClearableNumberField fullWidth size="small" label={t("Opacity")} value={Math.round(selectedShape.opacity * 100)} fallbackValue={100} normalize={(value) => Math.max(5, Math.min(100, Math.round(value)))} onCommit={(value) => applyShapeState({ ...selectedShape, opacity: value / 100 })} InputProps={{ endAdornment: <InputAdornment position="end">%</InputAdornment> }} />
                             <Button fullWidth size="small" variant="surface" color="grey" onClick={() => setShapeDialogOpen(true)}>{t("Shape Controls")}</Button>
                             <Button fullWidth size="small" color="error" variant="text" startIcon={<NiBinEmpty size="small" />} onClick={removeSelectedShape}>{t("Remove")}</Button>
                           </>
@@ -2105,24 +2158,24 @@ export default function DocumentUpsert() {
             {pageSettings.preset === "Custom" && (
               <>
                 <Grid size={{ xs: 12, md: 6 }}>
-                  <TextField fullWidth type="number" label={t("Width (mm)")} value={pageSettings.widthMm} onChange={(event) => updatePageField("widthMm", event.target.value)} />
+                  <ClearableNumberField fullWidth label={t("Width (mm)")} value={pageSettings.widthMm} fallbackValue={pageSettings.widthMm} normalize={(value) => Math.max(1, value)} onCommit={(value) => updatePageField("widthMm", String(value))} />
                 </Grid>
                 <Grid size={{ xs: 12, md: 6 }}>
-                  <TextField fullWidth type="number" label={t("Height (mm)")} value={pageSettings.heightMm} onChange={(event) => updatePageField("heightMm", event.target.value)} />
+                  <ClearableNumberField fullWidth label={t("Height (mm)")} value={pageSettings.heightMm} fallbackValue={pageSettings.heightMm} normalize={(value) => Math.max(1, value)} onCommit={(value) => updatePageField("heightMm", String(value))} />
                 </Grid>
               </>
             )}
             <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth type="number" label={t("Top Margin")} value={pageSettings.marginTopMm} onChange={(event) => updatePageField("marginTopMm", event.target.value)} />
+              <ClearableNumberField fullWidth label={t("Top Margin")} value={pageSettings.marginTopMm} fallbackValue={pageSettings.marginTopMm} normalize={(value) => Math.max(0, value)} onCommit={(value) => updatePageField("marginTopMm", String(value))} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth type="number" label={t("Right Margin")} value={pageSettings.marginRightMm} onChange={(event) => updatePageField("marginRightMm", event.target.value)} />
+              <ClearableNumberField fullWidth label={t("Right Margin")} value={pageSettings.marginRightMm} fallbackValue={pageSettings.marginRightMm} normalize={(value) => Math.max(0, value)} onCommit={(value) => updatePageField("marginRightMm", String(value))} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth type="number" label={t("Bottom Margin")} value={pageSettings.marginBottomMm} onChange={(event) => updatePageField("marginBottomMm", event.target.value)} />
+              <ClearableNumberField fullWidth label={t("Bottom Margin")} value={pageSettings.marginBottomMm} fallbackValue={pageSettings.marginBottomMm} normalize={(value) => Math.max(0, value)} onCommit={(value) => updatePageField("marginBottomMm", String(value))} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth type="number" label={t("Left Margin")} value={pageSettings.marginLeftMm} onChange={(event) => updatePageField("marginLeftMm", event.target.value)} />
+              <ClearableNumberField fullWidth label={t("Left Margin")} value={pageSettings.marginLeftMm} fallbackValue={pageSettings.marginLeftMm} normalize={(value) => Math.max(0, value)} onCommit={(value) => updatePageField("marginLeftMm", String(value))} />
             </Grid>
           </Grid>
         </DialogContent>
@@ -2233,29 +2286,31 @@ export default function DocumentUpsert() {
                 </TextField>
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
-                <TextField
+                <ClearableNumberField
                   fullWidth
-                  type="number"
                   label={t("Width (px)")}
                   value={selectedImage.width}
-                  onChange={(event) =>
+                  fallbackValue={40}
+                  normalize={(value) => Math.max(40, value)}
+                  onCommit={(value) =>
                     applyImageState({
                       ...selectedImage,
-                      width: Number(event.target.value) || 40,
+                      width: value,
                     })
                   }
                 />
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
-                <TextField
+                <ClearableNumberField
                   fullWidth
-                  type="number"
                   label={t("Opacity %")}
                   value={Math.round(selectedImage.opacity * 100)}
-                  onChange={(event) =>
+                  fallbackValue={100}
+                  normalize={(value) => Math.max(5, Math.min(100, Math.round(value)))}
+                  onCommit={(value) =>
                     applyImageState({
                       ...selectedImage,
-                      opacity: Math.max(0.05, Math.min(1, (Number(event.target.value) || 100) / 100)),
+                      opacity: value / 100,
                     })
                   }
                   InputProps={{
@@ -2264,30 +2319,30 @@ export default function DocumentUpsert() {
                 />
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
-                <TextField
+                <ClearableNumberField
                   fullWidth
-                  type="number"
                   label={t("X Position")}
                   value={selectedImage.x}
-                  onChange={(event) =>
+                  fallbackValue={0}
+                  onCommit={(value) =>
                     applyImageState({
                       ...selectedImage,
-                      x: Number(event.target.value) || 0,
+                      x: value,
                       positionMode: "absolute",
                     })
                   }
                 />
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
-                <TextField
+                <ClearableNumberField
                   fullWidth
-                  type="number"
                   label={t("Y Position")}
                   value={selectedImage.y}
-                  onChange={(event) =>
+                  fallbackValue={0}
+                  onCommit={(value) =>
                     applyImageState({
                       ...selectedImage,
-                      y: Number(event.target.value) || 0,
+                      y: value,
                       positionMode: "absolute",
                     })
                   }
@@ -2357,85 +2412,89 @@ export default function DocumentUpsert() {
                 </TextField>
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
-                <TextField
+                <ClearableNumberField
                   fullWidth
-                  type="number"
                   label={t("Width (px)")}
                   value={selectedShape.width}
-                  onChange={(event) =>
+                  fallbackValue={20}
+                  normalize={(value) => Math.max(20, value)}
+                  onCommit={(value) =>
                     applyShapeState({
                       ...selectedShape,
-                      width: Number(event.target.value) || 20,
+                      width: value,
                     })
                   }
                 />
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
-                <TextField
+                <ClearableNumberField
                   fullWidth
-                  type="number"
                   label={t(selectedShape.shape === "line" ? "Thickness (px)" : "Height (px)")}
                   value={selectedShape.height}
-                  onChange={(event) =>
+                  fallbackValue={20}
+                  normalize={(value) => Math.max(20, value)}
+                  onCommit={(value) =>
                     applyShapeState({
                       ...selectedShape,
-                      height: Number(event.target.value) || 20,
+                      height: value,
                     })
                   }
                 />
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
-                <TextField
+                <ClearableNumberField
                   fullWidth
-                  type="number"
                   label={t("X Position")}
                   value={selectedShape.x}
-                  onChange={(event) =>
+                  fallbackValue={0}
+                  onCommit={(value) =>
                     applyShapeState({
                       ...selectedShape,
-                      x: Number(event.target.value) || 0,
+                      x: value,
                     })
                   }
                 />
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
-                <TextField
+                <ClearableNumberField
                   fullWidth
-                  type="number"
                   label={t("Y Position")}
                   value={selectedShape.y}
-                  onChange={(event) =>
+                  fallbackValue={0}
+                  onCommit={(value) =>
                     applyShapeState({
                       ...selectedShape,
-                      y: Number(event.target.value) || 0,
+                      y: value,
                     })
                   }
                 />
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
-                <TextField
+                <ClearableNumberField
                   fullWidth
-                  type="number"
                   label={t("Border Width (px)")}
                   value={selectedShape.borderWidth}
-                  onChange={(event) =>
+                  fallbackValue={1}
+                  normalize={(value) => Math.max(1, value)}
+                  onCommit={(value) =>
                     applyShapeState({
                       ...selectedShape,
-                      borderWidth: Number(event.target.value) || 1,
+                      borderWidth: value,
                     })
                   }
                 />
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
-                <TextField
+                <ClearableNumberField
                   fullWidth
-                  type="number"
                   label={t("Opacity %")}
                   value={Math.round(selectedShape.opacity * 100)}
-                  onChange={(event) =>
+                  fallbackValue={100}
+                  normalize={(value) => Math.max(5, Math.min(100, Math.round(value)))}
+                  onCommit={(value) =>
                     applyShapeState({
                       ...selectedShape,
-                      opacity: Math.max(0.05, Math.min(1, (Number(event.target.value) || 100) / 100)),
+                      opacity: value / 100,
                     })
                   }
                   InputProps={{
