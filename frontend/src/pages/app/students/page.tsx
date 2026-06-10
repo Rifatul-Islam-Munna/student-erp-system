@@ -223,6 +223,15 @@ export default function StudentsIndex() {
   const handleGenerateStudentDocument = async (template: DocumentTemplate) => {
     if (!documentStudent?._id || !template._id) return;
 
+    if (template.documentFormat === "pdf") {
+      enqueueSnackbar(t("PDF layout template opening. Review it and print with student data."), {
+        variant: "info",
+      });
+      navigate(`/${role}/documents/view/${template._id}?studentId=${documentStudent._id}`);
+      closeDocumentDialog();
+      return;
+    }
+
     setGeneratingTemplateId(template._id);
     try {
       await DocumentService.generateAndDownloadPdf(
@@ -578,7 +587,12 @@ export default function StudentsIndex() {
                 >
                   <ListItemText
                     primary={template.name}
-                    secondary={template.description || `${template.pageSettings?.preset || "A4"} / ${template.status}`}
+                    secondary={
+                      template.description ||
+                      (template.documentFormat === "pdf"
+                        ? "PDF layout template"
+                        : `${template.pageSettings?.preset || "A4"} / ${template.status}`)
+                    }
                   />
                   {generatingTemplateId === template._id && <CircularProgress size={20} />}
                 </ListItemButton>

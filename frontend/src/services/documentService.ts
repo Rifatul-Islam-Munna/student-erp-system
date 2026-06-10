@@ -2,6 +2,23 @@ import { fetchApi } from "@/lib/api";
 import { DocumentQuery, DocumentTemplate } from "@/types/document";
 
 export const DocumentService = {
+  getTemplateSourceBlob: async (id: string) => {
+    const token = localStorage.getItem("auth_token");
+    const apiBase = import.meta.env.VITE_API_URL || "http://localhost:3000/api/v1";
+    const response = await fetch(`${apiBase}/documents/${id}/source`, {
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || "Failed to download source file");
+    }
+
+    return response.blob();
+  },
+
   getDocuments: async (query: DocumentQuery = {}) => {
     const params = new URLSearchParams();
     Object.entries(query).forEach(([key, value]) => {
@@ -28,6 +45,34 @@ export const DocumentService = {
       method: "PUT",
       body: JSON.stringify(data),
     });
+  },
+
+  uploadTemplateSource: async (id: string, file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const token = localStorage.getItem("auth_token");
+    const apiBase = import.meta.env.VITE_API_URL || "http://localhost:3000/api/v1";
+    const response = await fetch(`${apiBase}/documents/${id}/upload`, {
+      method: "POST",
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || "Failed to upload source file");
+    }
+
+    return response.json();
+  },
+
+  downloadTemplateSource: async (id: string, fileName?: string) => {
+    const blob = await DocumentService.getTemplateSourceBlob(id);
+    const { saveAs } = await import("file-saver");
+    saveAs(blob, fileName || "template-source");
   },
 
   deleteDocument: async (id: string) => {

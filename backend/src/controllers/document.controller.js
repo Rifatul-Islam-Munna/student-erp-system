@@ -464,6 +464,7 @@ export const getAllTemplates = async (request, reply) => {
         }
 
         if (docType) query.docType = docType;
+        if (request.query.documentFormat) query.documentFormat = request.query.documentFormat;
         if (status) query.status = status;
         if (typeof isActive === 'boolean') query.isActive = isActive;
 
@@ -547,8 +548,14 @@ export const deleteTemplate = async (request, reply) => {
         const template = await DocumentTemplate.findByIdAndDelete(request.params.id);
         if (!template) return reply.code(404).send({ success: false, message: 'Template not found.' });
 
-        if (template.originalFilePath && fs.existsSync(template.originalFilePath)) {
-            fs.unlinkSync(template.originalFilePath);
+        if (template.originalFilePath) {
+            try {
+                if (fs.existsSync(template.originalFilePath)) {
+                    fs.rmSync(template.originalFilePath, { force: true });
+                }
+            } catch (fileError) {
+                logger.warn({ err: fileError, path: template.originalFilePath }, 'Failed to remove template source file during delete');
+            }
         }
 
         return reply.send({ success: true, message: 'Template deleted successfully.' });
@@ -594,6 +601,23 @@ export const uploadTemplateFile = async (request, reply) => {
     }
 };
 
+export const downloadTemplateSource = async (request, reply) => {
+    try {
+        const template = await DocumentTemplate.findById(request.params.id).lean();
+        if (!template) return reply.code(404).send({ success: false, message: 'Template not found.' });
+        if (!template.originalFilePath || !fs.existsSync(template.originalFilePath)) {
+            return reply.code(404).send({ success: false, message: 'Source file not found.' });
+        }
+
+        reply.header('Content-Type', 'application/octet-stream');
+        reply.header('Content-Disposition', `attachment; filename="${template.originalFileName || path.basename(template.originalFilePath)}"`);
+        return reply.send(fs.createReadStream(template.originalFilePath));
+    } catch (error) {
+        logger.error(error);
+        return reply.code(500).send({ success: false, message: 'Failed to download source file.' });
+    }
+};
+
 export const generateDocument = async (request, reply) => {
     let browser = null;
     try {
@@ -606,6 +630,12 @@ export const generateDocument = async (request, reply) => {
         ]);
 
         if (!template) return reply.code(404).send({ success: false, message: 'Template not found.' });
+        if (template.documentFormat === 'pdf') {
+            return reply.code(400).send({
+                success: false,
+                message: 'PDF layout templates are frontend print templates. Open the template preview and print from there.'
+            });
+        }
         if (template.docType === 'student' && !student) {
             return reply.code(400).send({ success: false, message: 'Student document needs valid student.' });
         }
@@ -725,6 +755,7 @@ export const exportTemplates = async (_request, reply) => {
         const csvData = templates.map((template) => ({
             Name: template.name,
             DocumentType: template.docType,
+            DocumentFormat: template.documentFormat || 'html',
             Status: template.status || 'draft',
             Active: template.isActive ? 'Yes' : 'No',
             PagePreset: template.pageSettings?.preset || 'A4',
@@ -759,6 +790,7 @@ export const importTemplates = async (request, reply) => {
                     filter: { name },
                     update: {
                         docType: row.DocumentType || 'other',
+                        documentFormat: row.DocumentFormat || 'html',
                         status: row.Status || 'draft',
                         isActive: row.Active === 'Yes',
                         description: row.Description || '',

@@ -2,11 +2,15 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3000/api/
 
 export async function fetchApi(endpoint: string, options: RequestInit = {}) {
   const token = localStorage.getItem("auth_token");
+  const hasBody = options.body !== undefined && options.body !== null;
 
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
     ...(options.headers as Record<string, string> || {}),
   };
+
+  if (hasBody && !headers["Content-Type"]) {
+    headers["Content-Type"] = "application/json";
+  }
 
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;

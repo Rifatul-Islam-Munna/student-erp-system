@@ -1,5 +1,6 @@
 export type DocumentType = "system" | "student" | "other";
 export type DocumentStatus = "draft" | "active" | "inactive";
+export type DocumentFormat = "html" | "pdf";
 export type DocumentPagePreset = "A4" | "A3" | "Letter" | "Legal" | "Custom";
 export type DocumentOrientation = "portrait" | "landscape";
 
@@ -31,6 +32,7 @@ export interface DocumentTemplate {
   _id?: string;
   name: string;
   docType: DocumentType;
+  documentFormat: DocumentFormat;
   templateContent: string;
   shortcodes: string[];
   description?: string;
@@ -59,6 +61,7 @@ export interface DocumentQuery {
   limit?: number;
   search?: string;
   docType?: DocumentType | "";
+  documentFormat?: DocumentFormat | "";
   status?: DocumentStatus | "";
   isActive?: boolean;
   sortBy?: string;

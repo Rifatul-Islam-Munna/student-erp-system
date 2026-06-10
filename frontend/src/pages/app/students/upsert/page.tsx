@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useFormik } from "formik";
+import { useSnackbar } from "notistack";
 import * as yup from "yup";
 import {
   Box,
@@ -36,6 +37,7 @@ import {
 import { Education, JapaneseEducation, Student } from "@/types/student";
 import NiArrowLeft from "@/icons/nexture/ni-arrow-left";
 import NiBinEmpty from "@/icons/nexture/ni-bin-empty";
+import NiChevronRightSmall from "@/icons/nexture/ni-chevron-right-small";
 import NiFloppyDisk from "@/icons/nexture/ni-floppy-disk";
 import NiPlus from "@/icons/nexture/ni-plus";
 
@@ -46,6 +48,50 @@ const validationSchema = yup.object({
   dob: yup.date().nullable().required("Date of Birth is required"),
   gender: yup.string().oneOf(["male", "female", "other"]).required("Gender is required"),
 });
+
+const STUDENT_TABS = [
+  "Personal Information",
+  "Contact & Address",
+  "Family & Identity",
+  "Education",
+  "Employment",
+  "Study Info",
+  "Other",
+] as const;
+
+type StepField = {
+  label: string;
+  name: keyof Student | string;
+  when?: (values: Partial<Student>) => boolean;
+};
+
+const STEP_REQUIRED_FIELDS: StepField[][] = [
+  [
+    { name: "fullNameEn", label: "Full Name (English)" },
+    { name: "dob", label: "Date of Birth" },
+    { name: "gender", label: "Gender" },
+  ],
+  [
+    { name: "email", label: "Email" },
+    { name: "phone", label: "Phone" },
+    { name: "permanentAddress", label: "Permanent Address" },
+    {
+      name: "currentAddress",
+      label: "Current Address",
+      when: (values) => !values.currentAddressSameAsPermanent,
+    },
+  ],
+  [],
+  [],
+  [],
+  [
+    { name: "visaType", label: "Visa Type" },
+    { name: "country", label: "Country" },
+    { name: "schoolName", label: "School Name" },
+    { name: "intake", label: "Intake" },
+  ],
+  [],
+];
 
 const SectionLabel = ({ children }: { children: React.ReactNode }) => (
   <Grid size={12}>
@@ -414,12 +460,14 @@ const DEV_AUTOFILL_STORAGE_KEY = "student-create-dev-autofill";
 export default function StudentUpsert() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { enqueueSnackbar } = useSnackbar();
   const { role, id } = useParams();
   const isEdit = Boolean(id);
   const isDevCreate = import.meta.env.DEV && !isEdit;
 
   const [tabValue, setTabValue] = useState(0);
   const [loading, setLoading] = useState(false);
+  const lastTabIndex = STUDENT_TABS.length - 1;
 
   const formik = useFormik<Partial<Student>>({
     initialValues: {
@@ -532,6 +580,66 @@ export default function StudentUpsert() {
   });
 
   const derivedDocVariables = buildDerivedDocVariables(formik.values);
+
+  const hasFilledValue = (value: unknown) => {
+    if (value === null || value === undefined) return false;
+    if (typeof value === "string") return value.trim().length > 0;
+    if (Array.isArray(value)) return value.length > 0;
+    return true;
+  };
+
+  const validateStep = async (stepIndex: number) => {
+    const fields = (STEP_REQUIRED_FIELDS[stepIndex] || []).filter((field) => field.when?.(formik.values) ?? true);
+
+    if (!fields.length) {
+      return true;
+    }
+
+    const errors = await formik.validateForm();
+    const missingFields = fields.filter((field) => {
+      const value = formik.values[field.name as keyof Student];
+      const error = errors[field.name as keyof typeof errors];
+      return !hasFilledValue(value) || Boolean(error);
+    });
+
+    if (!missingFields.length) {
+      return true;
+    }
+
+    await Promise.all(
+      missingFields.map((field) => formik.setFieldTouched(field.name, true, false))
+    );
+
+    enqueueSnackbar(
+      `${t("Please fill required fields before going to next step.")} ${t(missingFields[0].label)}.`,
+      { variant: "warning" }
+    );
+
+    return false;
+  };
+
+  const handleNextTab = async () => {
+    const isValid = await validateStep(tabValue);
+    if (!isValid) return;
+    setTabValue((current) => Math.min(current + 1, lastTabIndex));
+  };
+
+  const handlePrevTab = () => {
+    setTabValue((current) => Math.max(current - 1, 0));
+  };
+
+  const handleTabChange = async (_event: React.SyntheticEvent, value: number) => {
+    if (value <= tabValue) {
+      setTabValue(value);
+      return;
+    }
+
+    if (value !== tabValue + 1) {
+      return;
+    }
+
+    await handleNextTab();
+  };
 
   useEffect(() => {
     if (!isEdit || !id) return;
@@ -924,14 +1032,10 @@ export default function StudentUpsert() {
         <form onSubmit={formik.handleSubmit}>
           <Card className="rounded-xl shadow-sm">
             <Box sx={{ borderBottom: 1, borderColor: "divider" }}>
-              <Tabs value={tabValue} onChange={(_event, value) => setTabValue(value)} variant="scrollable" scrollButtons="auto">
-                <Tab label={t("Personal Information")} />
-                <Tab label={t("Contact & Address")} />
-                <Tab label={t("Family & Identity")} />
-                <Tab label={t("Education")} />
-                <Tab label={t("Employment")} />
-                <Tab label={t("Study Info")} />
-                <Tab label={t("Other")} />
+              <Tabs value={tabValue} onChange={handleTabChange} variant="scrollable" scrollButtons="auto">
+                {STUDENT_TABS.map((tabLabel) => (
+                  <Tab key={tabLabel} label={t(tabLabel)} />
+                ))}
               </Tabs>
             </Box>
 
@@ -1439,13 +1543,29 @@ export default function StudentUpsert() {
             </CardContent>
 
             <Divider />
-            <Box className="p-4 flex justify-end gap-2">
+            <Box className="p-4 flex justify-between gap-2">
+              <Box className="flex gap-2">
+                {tabValue > 0 && (
+                  <Button color="grey" variant="outlined" startIcon={<NiArrowLeft size="medium" />} onClick={handlePrevTab}>
+                    {t("Previous")}
+                  </Button>
+                )}
+              </Box>
+
+              <Box className="flex gap-2">
               <Button color="grey" onClick={() => navigate(`/${role}/students`)}>
                 {t("Cancel")}
               </Button>
-              <Button type="submit" variant="surface" color="primary" startIcon={<NiFloppyDisk size="medium" />} disabled={loading}>
-                {loading ? t("Saving...") : t("Save Student")}
-              </Button>
+                {tabValue < lastTabIndex ? (
+                  <Button variant="surface" color="primary" endIcon={<NiChevronRightSmall size="medium" />} onClick={handleNextTab}>
+                    {t("Next")}
+                  </Button>
+                ) : (
+                  <Button type="submit" variant="surface" color="primary" startIcon={<NiFloppyDisk size="medium" />} disabled={loading}>
+                    {loading ? t("Saving...") : t("Save Student")}
+                  </Button>
+                )}
+              </Box>
             </Box>
           </Card>
         </form>

@@ -1,15 +1,15 @@
 import { cn } from "@/lib/utils";
 
 export default function Logo({ classNameFull, classNameMobile }: { classNameFull?: string; classNameMobile?: string }) {
-  return (
-    <>
-      <div className={cn("items-center", classNameFull ?? "flex")}>
-        <img src="/brand/logo-web-it.png" alt="Nexus Solution" className="h-10 w-auto object-contain" />
-      </div>
+  const resolvedClassName = classNameFull ?? (classNameMobile === "hidden" ? undefined : classNameMobile);
 
-      <div className={cn("items-center", classNameMobile ?? "flex")}>
-        <img src="/brand/logo-web-it.png" alt="Nexus Solution" className="h-10 w-auto object-contain" />
-      </div>
-    </>
+  return (
+    <div className={cn("flex items-center", resolvedClassName)}>
+      <img
+        src="/brand/logo-web-it.png"
+        alt="Nexus Solution"
+        className="h-9 max-w-[11rem] w-auto object-contain md:h-10 md:max-w-[12rem]"
+      />
+    </div>
   );
 }

@@ -50,6 +50,10 @@ export default async function documentRoutes(fastify, options) {
             preHandler: requirePermission('view_documents')
         }, documentController.getTemplateById);
 
+        protectedRoutes.get('/:id/source', {
+            preHandler: requirePermission('view_documents')
+        }, documentController.downloadTemplateSource);
+
         protectedRoutes.post('/', {
             schema: createDocumentTemplateSwagger,
             preHandler: [requirePermission('manage_documents'), validate(createDocumentTemplateSchema, 'body')]

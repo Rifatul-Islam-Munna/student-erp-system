@@ -33,7 +33,9 @@ import {
 } from "@mui/material";
 import type { TextFieldProps } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
+import { useSnackbar } from "notistack";
 
+import AiTemplateCanvas from "@/components/documents/ai-template-canvas";
 import {
   DEFAULT_DOCUMENT_PAGE_SETTINGS,
   getPageSettingsFromPreset,
@@ -81,13 +83,19 @@ import NiTextRight from "@/icons/nexture/ni-text-right";
 import NiTextStrikethrough from "@/icons/nexture/ni-text-strikethrough";
 import NiTextUnderline from "@/icons/nexture/ni-text-underline";
 import { DocumentService } from "@/services/documentService";
-import { DocumentCustomFont, DocumentPageSettings, DocumentTemplate, DocumentVariableDefinition } from "@/types/document";
+import { AiTemplateItem, createDefaultAiTemplateLayout, parseAiTemplateLayout, serializeAiTemplateLayout } from "@/types/aiTemplate";
+import { DocumentCustomFont, DocumentFormat, DocumentPageSettings, DocumentTemplate, DocumentVariableDefinition } from "@/types/document";
 
 const validationSchema = yup.object({
   name: yup.string().required("Title is required"),
   docType: yup.string().oneOf(["system", "student", "other"]).required("Document type is required"),
+  documentFormat: yup.string().oneOf(["html", "pdf"]).required("Document format is required"),
   status: yup.string().oneOf(["draft", "active", "inactive"]).required("Status is required"),
-  templateContent: yup.string().required("Document content is required"),
+  templateContent: yup.string().when("documentFormat", {
+    is: "html",
+    then: (schema) => schema.required("Document content is required"),
+    otherwise: (schema) => schema.default(""),
+  }),
 });
 
 const DOCUMENT_TYPES = [
@@ -95,6 +103,11 @@ const DOCUMENT_TYPES = [
   { value: "student", label: "Student" },
   { value: "other", label: "Other" },
 ] as const;
+
+const DOCUMENT_FORMATS: { value: DocumentFormat; label: string }[] = [
+  { value: "html", label: "Rich Document / PDF" },
+  { value: "pdf", label: "PDF Layout Builder" },
+];
 
 const DOCUMENT_STATUSES = [
   { value: "draft", label: "Draft" },
@@ -143,12 +156,16 @@ const normalizePageSettings = (pageSettings?: Partial<DocumentPageSettings>): Do
   };
 };
 
-const preparePayload = (values: Partial<DocumentTemplate>) => ({
+const extractAiVariables = (items: AiTemplateItem[]) =>
+  Array.from(new Set(items.filter((item) => item.type === "variable").map((item) => item.value.trim()).filter(Boolean)));
+
+const preparePayload = (values: Partial<DocumentTemplate>, aiItems: AiTemplateItem[] = []) => ({
   name: values.name || "",
   docType: values.docType || "other",
+  documentFormat: values.documentFormat || "html",
   fileType: values.fileType || "",
-  templateContent: values.templateContent || "",
-  shortcodes: extractVariables(values.templateContent || ""),
+  templateContent: values.documentFormat === "pdf" ? serializeAiTemplateLayout({ version: 1, type: "ai-layout", items: aiItems }) : values.templateContent || "",
+  shortcodes: values.documentFormat === "pdf" ? extractAiVariables(aiItems) : extractVariables(values.templateContent || ""),
   description: values.description || "",
   customFonts: Array.isArray(values.customFonts) ? values.customFonts : [],
   status: values.status || "draft",
@@ -543,6 +560,7 @@ function ClearableNumberField({
 
 export default function DocumentUpsert() {
   const { t } = useTranslation();
+  const { enqueueSnackbar } = useSnackbar();
   const theme = useTheme();
   const navigate = useNavigate();
   const { role, id } = useParams();
@@ -564,11 +582,16 @@ export default function DocumentUpsert() {
   const [fontSizePx, setFontSizePx] = useState("16");
   const [fontFamily, setFontFamily] = useState("Arial");
   const [uploadedFonts, setUploadedFonts] = useState<UploadedFontOption[]>([]);
+  const [pendingSourceFile, setPendingSourceFile] = useState<File | null>(null);
+  const [pdfSourceBlob, setPdfSourceBlob] = useState<Blob | null>(null);
+  const [aiItems, setAiItems] = useState<AiTemplateItem[]>([]);
+  const [selectedAiItemId, setSelectedAiItemId] = useState<string | null>(null);
   const [canvasZoom, setCanvasZoom] = useState(1);
   const [fitZoom, setFitZoom] = useState(1);
   const quillRef = useRef<ReactQuill | null>(null);
   const savedSelectionRef = useRef<EditorSelectionRange | null>(null);
   const fontUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const sourceUploadInputRef = useRef<HTMLInputElement | null>(null);
   const toolbarHostRef = useRef<HTMLDivElement | null>(null);
   const pageCanvasRef = useRef<HTMLDivElement | null>(null);
   const previewViewportRef = useRef<HTMLDivElement | null>(null);
@@ -876,6 +899,9 @@ export default function DocumentUpsert() {
     initialValues: {
       name: "",
       docType: "other",
+      documentFormat: "html",
+      fileType: "",
+      originalFileName: "",
       templateContent: "<p></p>",
       shortcodes: [],
       description: "",
@@ -887,11 +913,16 @@ export default function DocumentUpsert() {
     onSubmit: async (values) => {
       setLoading(true);
       try {
-        const payload = preparePayload(values);
+        const payload = preparePayload(values, aiItems);
+        let savedDocumentId = id;
         if (isEdit && id) {
           await DocumentService.updateDocument(id, payload);
         } else {
-          await DocumentService.createDocument(payload);
+          const response = await DocumentService.createDocument(payload);
+          savedDocumentId = response?.data?._id;
+        }
+        if (pendingSourceFile && savedDocumentId) {
+          await DocumentService.uploadTemplateSource(savedDocumentId, pendingSourceFile);
         }
         navigate(`/${role}/documents`);
       } catch (error) {
@@ -904,6 +935,7 @@ export default function DocumentUpsert() {
   });
 
   const pageSettings = normalizePageSettings(formik.values.pageSettings);
+  const isAiFormat = formik.values.documentFormat === "pdf";
   const usedVariables = extractVariables(formik.values.templateContent || "");
   const currentCanvasZoom = Math.max(0.35, Math.min(1.5, canvasZoom));
   const availableFonts = useMemo(
@@ -939,6 +971,20 @@ export default function DocumentUpsert() {
             pageSettings: normalizePageSettings(documentData.pageSettings),
           });
           setUploadedFonts(Array.isArray(documentData.customFonts) ? documentData.customFonts : []);
+          if (documentData.documentFormat === "pdf") {
+            setAiItems(parseAiTemplateLayout(documentData.templateContent).items);
+            if ((_id || id) && (documentData.originalFileName || documentData.originalFilePath)) {
+              try {
+                const sourceBlob = await DocumentService.getTemplateSourceBlob((_id || id) as string);
+                setPdfSourceBlob(sourceBlob);
+              } catch (sourceError) {
+                console.error("Failed to load PDF source", sourceError);
+              }
+            }
+          } else {
+            setAiItems(createDefaultAiTemplateLayout().items);
+            setPdfSourceBlob(null);
+          }
         }
       } catch (error) {
         console.error("Failed to fetch document", error);
@@ -1233,6 +1279,15 @@ export default function DocumentUpsert() {
     }));
   }, [formik.values.docType, variableSearch]);
 
+  const aiAvailableVariables = useMemo(
+    () => availableVariableGroups.flatMap((group) => group.items),
+    [availableVariableGroups],
+  );
+  const selectedPdfItem = useMemo(
+    () => aiItems.find((item) => item.id === selectedAiItemId) || null,
+    [aiItems, selectedAiItemId],
+  );
+
   const handlePagePresetChange = (preset: DocumentPageSettings["preset"]) => {
     const orientation = formik.values.pageSettings?.orientation || DEFAULT_DOCUMENT_PAGE_SETTINGS.orientation;
     const nextBase = preset === "Custom"
@@ -1286,6 +1341,57 @@ export default function DocumentUpsert() {
 
   const copyVariable = async (variable: string) => {
     await navigator.clipboard.writeText(variable);
+    enqueueSnackbar(`${variable} ${t("copied")}`, { variant: "success" });
+  };
+
+  const handlePdfVariableClick = async (variable: string) => {
+    addPdfVariable(variable);
+    await copyVariable(variable);
+  };
+
+  const addPdfVariable = (variable: string) => {
+    const nextItem: AiTemplateItem = {
+      id: `pdf-item-${Date.now()}`,
+      type: "variable",
+      value: variable,
+      x: 10,
+      y: 10 + aiItems.length * 5,
+      fontFamily,
+      fontSize: Math.max(8, Number(fontSizePx) || 16),
+      color: "#111827",
+      backgroundColor: "transparent",
+      fontWeight: 600,
+    };
+    setAiItems((current) => [...current, nextItem]);
+    setSelectedAiItemId(nextItem.id);
+  };
+
+  const addPdfText = () => {
+    const nextItem: AiTemplateItem = {
+      id: `pdf-text-${Date.now()}`,
+      type: "text",
+      value: "Custom Text",
+      x: 12,
+      y: 14 + aiItems.length * 5,
+      fontFamily,
+      fontSize: Math.max(8, Number(fontSizePx) || 16),
+      color: "#111827",
+      backgroundColor: "transparent",
+      fontWeight: 500,
+    };
+    setAiItems((current) => [...current, nextItem]);
+    setSelectedAiItemId(nextItem.id);
+  };
+
+  const updateSelectedPdfItem = (patch: Partial<AiTemplateItem>) => {
+    if (!selectedAiItemId) return;
+    setAiItems((current) => current.map((item) => (item.id === selectedAiItemId ? { ...item, ...patch } : item)));
+  };
+
+  const removeSelectedPdfItem = () => {
+    if (!selectedAiItemId) return;
+    setAiItems((current) => current.filter((item) => item.id !== selectedAiItemId));
+    setSelectedAiItemId(null);
   };
 
   const applyFontSize = (value: string) => {
@@ -1505,10 +1611,20 @@ export default function DocumentUpsert() {
     applyShapeState(updater(readShapeState(shape)));
   };
 
+  const handleSourceFileSelect = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setPendingSourceFile(file);
+    setPdfSourceBlob(file);
+    formik.setFieldValue("fileType", file.name.split(".").pop()?.toLowerCase() || "pdf");
+    formik.setFieldValue("originalFileName", file.name);
+    if (event.target) event.target.value = "";
+  };
+
   const goToBuilder = async () => {
     const errors = await formik.validateForm();
-    formik.setTouched({ name: true, docType: true, status: true });
-    if (errors.name || errors.docType || errors.status) return;
+    formik.setTouched({ name: true, docType: true, documentFormat: true, status: true });
+    if (errors.name || errors.docType || errors.documentFormat || errors.status) return;
     setSearchParams({ step: "builder" });
   };
 
@@ -1606,6 +1722,32 @@ export default function DocumentUpsert() {
                     ))}
                   </TextField>
                 </Grid>
+                <Grid size={{ xs: 12, md: 3 }}>
+                  <TextField
+                    fullWidth
+                    select
+                    id="documentFormat"
+                    name="documentFormat"
+                    label={t("Document Format")}
+                    value={formik.values.documentFormat || "html"}
+                    onChange={formik.handleChange}
+                    error={formik.touched.documentFormat && Boolean(formik.errors.documentFormat)}
+                    helperText={formik.touched.documentFormat && formik.errors.documentFormat}
+                  >
+                    {DOCUMENT_FORMATS.map((item) => (
+                      <MenuItem key={item.value} value={item.value}>
+                        {t(item.label)}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                </Grid>
+                <Grid size={12}>
+                  <Alert severity={isAiFormat ? "info" : "success"}>
+                    {isAiFormat
+                      ? t("PDF layout mode lets you upload a PDF, preview it, place variables visually, and style text before printing.")
+                      : t("Rich Document mode keeps the current visual builder, custom fonts, colors, and PDF output.")}
+                  </Alert>
+                </Grid>
                 <Grid size={{ xs: 12, md: 4 }}>
                   <TextField fullWidth select label={t("Paper Size")} value={pageSettings.preset} onChange={(event) => handlePagePresetChange(event.target.value as DocumentPageSettings["preset"])}>
                     {PAGE_PRESETS.map((preset) => (
@@ -1653,6 +1795,13 @@ export default function DocumentUpsert() {
                   </TextField>
                 </Grid>
                 <Grid size={{ xs: 12, md: 2 }}>
+                  <TextField fullWidth size="small" select label={t("Format")} name="documentFormat" value={formik.values.documentFormat || "html"} onChange={formik.handleChange}>
+                    {DOCUMENT_FORMATS.map((item) => (
+                      <MenuItem key={item.value} value={item.value}>{t(item.label)}</MenuItem>
+                    ))}
+                  </TextField>
+                </Grid>
+                <Grid size={{ xs: 12, md: 2 }}>
                   <TextField fullWidth size="small" select label={t("Status")} name="status" value={formik.values.status || "draft"} onChange={formik.handleChange}>
                     {DOCUMENT_STATUSES.map((item) => (
                       <MenuItem key={item.value} value={item.value}>{t(item.label)}</MenuItem>
@@ -1673,12 +1822,186 @@ export default function DocumentUpsert() {
             <CardContent>
               <Box className="mb-4 flex flex-wrap gap-2">
                 <Chip label={`${pageSettings.preset} / ${pageSettings.orientation}`} size="small" variant="outlined" />
-                <Chip label={`${usedVariables.length} ${t("variables used")}`} size="small" variant="outlined" color="warning" />
+                <Chip label={t(isAiFormat ? "PDF Layout Builder" : "Rich Document / PDF")} size="small" variant="outlined" color={isAiFormat ? "info" : "default"} />
+                {!isAiFormat && <Chip label={`${usedVariables.length} ${t("variables used")}`} size="small" variant="outlined" color="warning" />}
                 {formik.values.docType === "student" && <Chip label={t("Student variable mode")} size="small" color="primary" variant="outlined" />}
                 {selectedImage && <Chip label={t("Image Selected")} size="small" color="secondary" variant="outlined" onClick={() => setImageDialogOpen(true)} />}
                 {selectedShape && <Chip label={t("Shape Selected")} size="small" color="info" variant="outlined" onClick={() => setShapeDialogOpen(true)} />}
               </Box>
 
+              {isAiFormat ? (
+                <Box className="space-y-4">
+                  <Alert severity="info">
+                    {t("Upload your PDF file, preview first page here, add variables or custom text, drag them where you want, then style font, size, color, and background.")}
+                  </Alert>
+                  <Card variant="outlined">
+                    <CardContent>
+                      <Box className="space-y-4">
+                        <Box>
+                          <Typography variant="h6">{t("PDF Source File")}</Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            {pendingSourceFile?.name || formik.values.originalFileName || t("No source file selected yet")}
+                          </Typography>
+                          <Box className="mt-3 flex flex-wrap gap-2">
+                            <Button size="small" variant="surface" color="grey" onClick={() => sourceUploadInputRef.current?.click()}>
+                              {t("Choose PDF")}
+                            </Button>
+                            <Button size="small" variant="surface" color="grey" startIcon={<NiClipboard size="medium" />} onClick={() => setVariableDialogOpen(true)}>
+                              {t("Open Variable Modal")}
+                            </Button>
+                            <Button size="small" variant="surface" color="grey" onClick={addPdfText}>
+                              {t("Add Text Box")}
+                            </Button>
+                            <Button size="small" variant="surface" color="grey" onClick={() => fontUploadInputRef.current?.click()}>
+                              {t("Upload Custom Font")}
+                            </Button>
+                            {isEdit && id && formik.values.originalFileName && (
+                              <Button size="small" variant="surface" color="primary" onClick={() => void DocumentService.downloadTemplateSource(id, formik.values.originalFileName)}>
+                                {t("Download Source")}
+                              </Button>
+                            )}
+                          </Box>
+                          <Box className="mt-4">
+                            <AiTemplateCanvas
+                              editable
+                              items={aiItems}
+                              selectedItemId={selectedAiItemId}
+                              sourceBlob={pdfSourceBlob}
+                              pageWidthMm={pageSettings.widthMm}
+                              pageHeightMm={pageSettings.heightMm}
+                              onItemSelect={setSelectedAiItemId}
+                              onItemsChange={setAiItems}
+                            />
+                          </Box>
+                        </Box>
+                        <input
+                          ref={fontUploadInputRef}
+                          type="file"
+                          accept={FONT_UPLOAD_ACCEPT}
+                          onChange={handleFontUpload}
+                          style={{ display: "none" }}
+                        />
+                        <Box className="grid gap-4 xl:grid-cols-2">
+                          <Card variant="outlined" sx={{ borderRadius: 4 }}>
+                            <CardContent className="space-y-3">
+                              <Typography variant="h6">{t("How It Works")}</Typography>
+                              <Typography variant="body2" color="text.secondary">
+                                {t("1. Open variable modal to copy variables. 2. Add a text box. 3. Paste variable or write text. 4. Drag on PDF. 5. Style with font, hex color, size, and background.")}
+                              </Typography>
+                            </CardContent>
+                          </Card>
+                          <Card variant="outlined" sx={{ borderRadius: 4 }}>
+                            <CardContent className="space-y-3">
+                              <Typography variant="h6">{t("Selected Item Style")}</Typography>
+                              {!selectedPdfItem ? (
+                                <Typography variant="body2" color="text.secondary">
+                                  {t("Select a text or variable box from PDF preview first.")}
+                                </Typography>
+                              ) : (
+                                <>
+                                  <TextField
+                                    fullWidth
+                                    size="small"
+                                    label={t("Text / Variable")}
+                                    value={selectedPdfItem.value}
+                                    onChange={(event) => updateSelectedPdfItem({ value: event.target.value })}
+                                  />
+                                  <TextField
+                                    fullWidth
+                                    size="small"
+                                    select
+                                    label={t("Font Family")}
+                                    value={selectedPdfItem.fontFamily}
+                                    onChange={(event) => updateSelectedPdfItem({ fontFamily: event.target.value })}
+                                  >
+                                    {availableFonts.map((font) => (
+                                      <MenuItem key={font.value} value={font.value} sx={{ fontFamily: font.value }}>
+                                        {font.label}
+                                      </MenuItem>
+                                    ))}
+                                  </TextField>
+                                  <ClearableNumberField
+                                    fullWidth
+                                    size="small"
+                                    label={t("Font Size")}
+                                    value={selectedPdfItem.fontSize}
+                                    fallbackValue={20}
+                                    normalize={(value) => Math.max(8, value)}
+                                    onCommit={(value) => updateSelectedPdfItem({ fontSize: value })}
+                                  />
+                                  <TextField
+                                    fullWidth
+                                    size="small"
+                                    label={t("Text Color Hex")}
+                                    value={selectedPdfItem.color}
+                                    onChange={(event) => updateSelectedPdfItem({ color: event.target.value })}
+                                    InputProps={{
+                                      startAdornment: <InputAdornment position="start"><Box component="span" sx={{ width: 18, height: 18, borderRadius: "6px", bgcolor: selectedPdfItem.color, border: "1px solid", borderColor: "divider", display: "inline-block" }} /></InputAdornment>,
+                                    }}
+                                  />
+                                  <TextField
+                                    fullWidth
+                                    size="small"
+                                    label={t("Background Hex")}
+                                    value={selectedPdfItem.backgroundColor === "transparent" ? "" : selectedPdfItem.backgroundColor}
+                                    onChange={(event) => updateSelectedPdfItem({ backgroundColor: event.target.value || "transparent" })}
+                                    placeholder="#FFFFFF or empty"
+                                  />
+                                  <ClearableNumberField
+                                    fullWidth
+                                    size="small"
+                                    label={t("Font Weight")}
+                                    value={selectedPdfItem.fontWeight}
+                                    fallbackValue={600}
+                                    normalize={(value) => Math.max(300, Math.min(800, Math.round(value)))}
+                                    onCommit={(value) => updateSelectedPdfItem({ fontWeight: value })}
+                                  />
+                                  <Button fullWidth size="small" color="error" variant="text" startIcon={<NiBinEmpty size="small" />} onClick={removeSelectedPdfItem}>
+                                    {t("Remove Selected")}
+                                  </Button>
+                                </>
+                              )}
+                            </CardContent>
+                          </Card>
+                        </Box>
+                        <input
+                          ref={sourceUploadInputRef}
+                          type="file"
+                          accept="application/pdf,.pdf"
+                          onChange={handleSourceFileSelect}
+                          style={{ display: "none" }}
+                        />
+                      </Box>
+                    </CardContent>
+                  </Card>
+                  <Card variant="outlined">
+                    <CardContent className="space-y-3">
+                      <Box className="flex items-center justify-between gap-2">
+                        <Typography variant="h6">{t("Quick Copy Variables")}</Typography>
+                        <Button size="small" variant="surface" color="grey" startIcon={<NiClipboard size="medium" />} onClick={() => setVariableDialogOpen(true)}>
+                          {t("Open Variable Modal")}
+                        </Button>
+                      </Box>
+                      <Typography variant="body2" color="text.secondary">
+                        {t("Click variable to auto add it on PDF and also copy it. Then drag it anywhere you want.")}
+                      </Typography>
+                      <Box className="flex flex-wrap gap-2">
+                        {aiAvailableVariables.map((item) => (
+                          <Chip
+                            key={item.templateVariable}
+                            label={item.templateVariable}
+                            variant="outlined"
+                            onClick={() => void handlePdfVariableClick(item.templateVariable)}
+                            onDelete={() => void copyVariable(item.templateVariable)}
+                            deleteIcon={<NiClipboard size="small" />}
+                          />
+                        ))}
+                      </Box>
+                    </CardContent>
+                  </Card>
+                </Box>
+              ) : (
+              <>
               <Box
                 className="mb-4 space-y-3 rounded-xl p-3"
                 sx={{
@@ -2113,6 +2436,9 @@ export default function DocumentUpsert() {
                 </Box>
               </Box>
 
+              </>
+              )}
+
               <Box className="mt-4">
                 <TextField
                   fullWidth
@@ -2225,7 +2551,7 @@ export default function DocumentUpsert() {
                         key={item.templateVariable}
                         label={item.templateVariable}
                         draggable
-                        onClick={() => void insertVariable(item.templateVariable)}
+                        onClick={() => void (isAiFormat ? handlePdfVariableClick(item.templateVariable) : insertVariable(item.templateVariable))}
                         onDelete={() => void copyVariable(item.templateVariable)}
                         onDragStart={(event) => event.dataTransfer.setData("text/plain", item.templateVariable)}
                         deleteIcon={<NiClipboard size="small" />}
@@ -2237,12 +2563,16 @@ export default function DocumentUpsert() {
               </Box>
             ))}
           </Box>
-          <Divider className="my-4" />
-          <Box className="flex flex-wrap gap-2">
-            {usedVariables.map((variable) => (
-              <Chip key={variable} label={variable} color="success" variant="outlined" size="small" />
-            ))}
-          </Box>
+          {!isAiFormat && (
+            <>
+              <Divider className="my-4" />
+              <Box className="flex flex-wrap gap-2">
+                {usedVariables.map((variable) => (
+                  <Chip key={variable} label={variable} color="success" variant="outlined" size="small" />
+                ))}
+              </Box>
+            </>
+          )}
         </DialogContent>
         <DialogActions>
           <Button color="grey" onClick={() => setVariableDialogOpen(false)}>{t("Close")}</Button>

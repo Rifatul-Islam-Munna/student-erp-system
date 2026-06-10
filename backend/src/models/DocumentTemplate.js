@@ -12,6 +12,13 @@ const documentTemplateSchema = new mongoose.Schema({
         trim: true,
         enum: ['system', 'student', 'other']
     },
+    documentFormat: {
+        type: String,
+        required: true,
+        trim: true,
+        enum: ['html', 'pdf'],
+        default: 'html'
+    },
     fileType: {
         type: String,
         trim: true

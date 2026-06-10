@@ -4,6 +4,7 @@ export const documentTemplateResponseSchema = {
         _id: { type: 'string' },
         name: { type: 'string' },
         docType: { type: 'string' },
+        documentFormat: { type: 'string' },
         status: { type: 'string' },
         fileType: { type: 'string' },
         originalFilePath: { type: 'string' },
@@ -53,6 +54,7 @@ export const getAllDocumentTemplatesSwagger = {
             limit: { type: 'number' },
             search: { type: 'string' },
             docType: { type: 'string' },
+            documentFormat: { type: 'string' },
             status: { type: 'string' },
             isActive: { type: 'boolean' }
         }

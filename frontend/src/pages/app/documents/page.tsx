@@ -1,6 +1,7 @@
 import { ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { useSnackbar } from "notistack";
 import {
   Box,
   Breadcrumbs,
@@ -40,6 +41,7 @@ const getStatusColor = (status: DocumentTemplate["status"]) => {
 
 export default function DocumentsIndex() {
   const { t } = useTranslation();
+  const { enqueueSnackbar } = useSnackbar();
   const navigate = useNavigate();
   const { role } = useParams();
 
@@ -82,9 +84,11 @@ export default function DocumentsIndex() {
     if (!window.confirm(t("Are you sure you want to delete this document?"))) return;
     try {
       await DocumentService.deleteDocument(id);
-      fetchDocuments();
-    } catch (error) {
+      enqueueSnackbar(t("Document deleted successfully"), { variant: "success" });
+      await fetchDocuments();
+    } catch (error: any) {
       console.error("Failed to delete document", error);
+      enqueueSnackbar(error?.message || t("Failed to delete document"), { variant: "error" });
     }
   };
 
