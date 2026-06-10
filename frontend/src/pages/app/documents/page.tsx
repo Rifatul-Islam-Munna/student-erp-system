@@ -1,4 +1,4 @@
-import { ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
+import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useSnackbar } from "notistack";
@@ -7,6 +7,11 @@ import {
   Breadcrumbs,
   Button,
   Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Divider,
   Grid,
   IconButton,
   InputAdornment,
@@ -31,7 +36,7 @@ import NiFolderPlus from "@/icons/nexture/ni-folder-plus";
 import NiPen from "@/icons/nexture/ni-pen";
 import NiSearch from "@/icons/nexture/ni-search";
 import { DocumentService } from "@/services/documentService";
-import { DocumentQuery, DocumentTemplate } from "@/types/document";
+import { DocumentQuery, DocumentTemplate, DocumentVariableDefinition } from "@/types/document";
 
 const getStatusColor = (status: DocumentTemplate["status"]) => {
   if (status === "active") return "success";
@@ -53,6 +58,16 @@ export default function DocumentsIndex() {
   const [search, setSearch] = useState("");
   const [docType, setDocType] = useState<DocumentQuery["docType"]>("");
   const [status, setStatus] = useState<DocumentQuery["status"]>("");
+  const [variableDialogOpen, setVariableDialogOpen] = useState(false);
+  const [variableSearch, setVariableSearch] = useState("");
+  const [variableLoading, setVariableLoading] = useState(false);
+  const [availableVariables, setAvailableVariables] = useState<{
+    student: DocumentVariableDefinition[];
+    system: DocumentVariableDefinition[];
+  }>({
+    student: [],
+    system: [],
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchDocuments = useCallback(async () => {
@@ -94,6 +109,55 @@ export default function DocumentsIndex() {
 
   const handleImportClick = () => fileInputRef.current?.click();
 
+  const handleOpenVariables = async () => {
+    setVariableDialogOpen(true);
+    if (availableVariables.student.length || availableVariables.system.length || variableLoading) return;
+
+    setVariableLoading(true);
+    try {
+      const response = await DocumentService.getAvailableVariables();
+      if (response?.success) {
+        setAvailableVariables({
+          student: Array.isArray(response.data?.student) ? response.data.student : [],
+          system: Array.isArray(response.data?.system) ? response.data.system : [],
+        });
+      }
+    } catch (error: any) {
+      console.error("Failed to fetch variables", error);
+      enqueueSnackbar(error?.message || t("Failed to load variables"), { variant: "error" });
+    } finally {
+      setVariableLoading(false);
+    }
+  };
+
+  const handleCopyVariable = async (value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      enqueueSnackbar(t("Variable copied"), { variant: "success" });
+    } catch (error) {
+      console.error("Failed to copy variable", error);
+      enqueueSnackbar(t("Failed to copy variable"), { variant: "error" });
+    }
+  };
+
+  const variableGroups = useMemo(() => {
+    const query = variableSearch.trim().toLowerCase();
+    const groups: Array<{ title: string; items: DocumentVariableDefinition[] }> = [
+      { title: "System Variables", items: availableVariables.system },
+      { title: "Student Variables", items: availableVariables.student },
+    ];
+
+    return groups.map((group) => ({
+      ...group,
+      items: group.items.filter((item) => {
+        if (!query) return true;
+        return [item.templateVariable, item.variableName, item.dbField, item.source]
+          .filter(Boolean)
+          .some((value) => value?.toLowerCase().includes(query));
+      }),
+    }));
+  }, [availableVariables, variableSearch]);
+
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -133,6 +197,9 @@ export default function DocumentsIndex() {
         </Box>
 
         <Box className="flex flex-wrap items-center gap-2">
+          <Button variant="surface" color="grey" onClick={() => void handleOpenVariables()}>
+            {t("Show All Variables")}
+          </Button>
           <Button variant="surface" color="grey" startIcon={<NiArrowInUp size="medium" />} onClick={handleImportClick}>
             {t("Import")}
           </Button>
@@ -265,6 +332,61 @@ export default function DocumentsIndex() {
           rowsPerPageOptions={[10, 25, 50]}
         />
       </TableContainer>
+
+      <Dialog open={variableDialogOpen} onClose={() => setVariableDialogOpen(false)} fullWidth maxWidth="md">
+        <DialogTitle>{t("All Variables")}</DialogTitle>
+        <DialogContent dividers>
+          <Box className="mb-4">
+            <TextField
+              fullWidth
+              size="small"
+              placeholder={t("Search variable")}
+              value={variableSearch}
+              onChange={(event) => setVariableSearch(event.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <NiSearch size="small" />
+                  </InputAdornment>
+                ),
+              }}
+            />
+          </Box>
+
+          {variableLoading ? (
+            <Typography variant="body2" color="text.secondary">{t("Loading...")}</Typography>
+          ) : (
+            <Box className="space-y-5">
+              {variableGroups.map((group) => (
+                <Box key={group.title}>
+                  <Typography variant="subtitle1" fontWeight={600} className="mb-2">
+                    {t(group.title)} ({group.items.length})
+                  </Typography>
+                  <Box className="flex flex-wrap gap-2">
+                    {group.items.length === 0 ? (
+                      <Typography variant="body2" color="text.secondary">{t("No variable found")}</Typography>
+                    ) : (
+                      group.items.map((item) => (
+                        <Chip
+                          key={item.templateVariable}
+                          label={item.templateVariable}
+                          title={[item.variableName, item.dbField, item.source].filter(Boolean).join(" | ")}
+                          variant="outlined"
+                          onClick={() => void handleCopyVariable(item.templateVariable)}
+                        />
+                      ))
+                    )}
+                  </Box>
+                  <Divider className="mt-4" />
+                </Box>
+              ))}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button color="grey" onClick={() => setVariableDialogOpen(false)}>{t("Close")}</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }
