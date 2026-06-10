@@ -1877,6 +1877,34 @@ export default function DocumentUpsert() {
                               </Button>
                             )}
                           </Box>
+                          <Card variant="outlined" sx={{ borderRadius: 4, mt: 3 }}>
+                            <CardContent className="space-y-3">
+                              <Typography variant="h6">{t("Precision Tools")}</Typography>
+                              <Box className="px-2">
+                                <Typography variant="body2" className="mb-2">{t("Zoom")}: {Math.round(pdfCanvasZoom * 100)}%</Typography>
+                                <Slider
+                                  value={Math.round(pdfCanvasZoom * 100)}
+                                  min={50}
+                                  max={250}
+                                  step={5}
+                                  onChange={(_event, value) => setPdfCanvasZoom((Array.isArray(value) ? value[0] : value) / 100)}
+                                  valueLabelDisplay="auto"
+                                />
+                              </Box>
+                              <Box className="flex flex-wrap gap-x-6 gap-y-1">
+                                <FormControlLabel control={<Switch checked={pdfShowGrid} onChange={(event) => setPdfShowGrid(event.target.checked)} />} label={t("Show Grid")} />
+                                <FormControlLabel control={<Switch checked={pdfShowGuides} onChange={(event) => setPdfShowGuides(event.target.checked)} />} label={t("Show Print Guides")} />
+                                <FormControlLabel control={<Switch checked={pdfShowRulers} onChange={(event) => setPdfShowRulers(event.target.checked)} />} label={t("Show Rulers")} />
+                                <FormControlLabel control={<Switch checked={pdfSnapToGrid} onChange={(event) => setPdfSnapToGrid(event.target.checked)} />} label={t("Snap To Grid")} />
+                              </Box>
+                              <Typography variant="body2" color="text.secondary">
+                                {t("Uploaded custom fonts are embedded as data URLs, so preview and print use the same uploaded font source.")}
+                              </Typography>
+                              <Alert severity="success">
+                                {t("Green guide box is print-safe area based on current page margins. Use zoom plus X/Y for pixel-perfect placement.")}
+                              </Alert>
+                            </CardContent>
+                          </Card>
                           <Box className="mt-4">
                             <AiTemplateCanvas
                               editable
@@ -1906,33 +1934,7 @@ export default function DocumentUpsert() {
                           onChange={handleFontUpload}
                           style={{ display: "none" }}
                         />
-                        <Box className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px] xl:items-start">
-                          <Card variant="outlined" sx={{ borderRadius: 4 }}>
-                            <CardContent className="space-y-3">
-                              <Typography variant="h6">{t("Precision Tools")}</Typography>
-                              <Box className="px-2">
-                                <Typography variant="body2" className="mb-2">{t("Zoom")}: {Math.round(pdfCanvasZoom * 100)}%</Typography>
-                                <Slider
-                                  value={Math.round(pdfCanvasZoom * 100)}
-                                  min={50}
-                                  max={250}
-                                  step={5}
-                                  onChange={(_event, value) => setPdfCanvasZoom((Array.isArray(value) ? value[0] : value) / 100)}
-                                  valueLabelDisplay="auto"
-                                />
-                              </Box>
-                              <FormControlLabel control={<Switch checked={pdfShowGrid} onChange={(event) => setPdfShowGrid(event.target.checked)} />} label={t("Show Grid")} />
-                              <FormControlLabel control={<Switch checked={pdfShowGuides} onChange={(event) => setPdfShowGuides(event.target.checked)} />} label={t("Show Print Guides")} />
-                              <FormControlLabel control={<Switch checked={pdfShowRulers} onChange={(event) => setPdfShowRulers(event.target.checked)} />} label={t("Show Rulers")} />
-                              <FormControlLabel control={<Switch checked={pdfSnapToGrid} onChange={(event) => setPdfSnapToGrid(event.target.checked)} />} label={t("Snap To Grid")} />
-                              <Typography variant="body2" color="text.secondary">
-                                {t("Uploaded custom fonts are embedded as data URLs, so print preview uses the same uploaded font source.")}
-                              </Typography>
-                              <Alert severity="success">
-                                {t("Green guide box is print-safe area based on current page margins. Use zoom plus X/Y for pixel-perfect placement.")}
-                              </Alert>
-                            </CardContent>
-                          </Card>
+                        <Box className="grid gap-4 xl:grid-cols-[380px] xl:justify-end">
                           <Card variant="outlined" sx={{ borderRadius: 4, position: { xl: "sticky" }, top: { xl: 20 } }}>
                             <CardContent className="space-y-3">
                               <Typography variant="h6">{t("Selected Item Style")}</Typography>

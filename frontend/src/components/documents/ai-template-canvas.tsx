@@ -163,7 +163,7 @@ export default function AiTemplateCanvas({
           ref={surfaceRef}
           sx={{
             position: "relative",
-            width: `${Math.max(100, zoom * 100)}%`,
+            width: `${zoom * 100}%`,
             maxWidth: "none",
             aspectRatio: `${pageWidthMm} / ${pageHeightMm}`,
             minHeight: 520,
