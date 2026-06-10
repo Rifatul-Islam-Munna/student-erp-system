@@ -16,12 +16,14 @@ export type XlsxPreviewCell = {
   style: XlsxPreviewCellStyle;
   colSpan?: number;
   rowSpan?: number;
+  hidden?: boolean;
 };
 
 export type XlsxPreviewSheet = {
   name: string;
   rows: XlsxPreviewCell[][];
   colWidths: number[];
+  rowHeights: number[];
 };
 
 const argbToHex = (argb?: string) => {
@@ -101,6 +103,31 @@ export const readXlsxPreview = async (source: Blob): Promise<XlsxPreviewSheet> =
   const maxCols = 16;
   const rows: XlsxPreviewCell[][] = [];
   const colWidths: number[] = [];
+  const rowHeights: number[] = [];
+  const mergeMap = new Map<string, { rowSpan?: number; colSpan?: number; hidden?: boolean }>();
+
+  (worksheet.model.merges || []).forEach((rangeRef) => {
+    const [startRef, endRef] = String(rangeRef).split(":");
+    const start = worksheet.getCell(startRef);
+    const end = worksheet.getCell(endRef);
+    const startRow = start.row;
+    const startCol = start.col;
+    const endRow = end.row;
+    const endCol = end.col;
+
+    mergeMap.set(`${startRow}:${startCol}`, {
+      rowSpan: endRow - startRow + 1,
+      colSpan: endCol - startCol + 1,
+      hidden: false,
+    });
+
+    for (let row = startRow; row <= endRow; row += 1) {
+      for (let col = startCol; col <= endCol; col += 1) {
+        if (row === startRow && col === startCol) continue;
+        mergeMap.set(`${row}:${col}`, { hidden: true });
+      }
+    }
+  });
 
   for (let c = 1; c <= maxCols; c++) {
     const col = worksheet.getColumn(c);
@@ -109,13 +136,18 @@ export const readXlsxPreview = async (source: Blob): Promise<XlsxPreviewSheet> =
 
   worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
     if (rowNumber > maxRows) return;
+    rowHeights.push(row.height ? Math.round(row.height * 1.5) : 32);
 
     const cells: XlsxPreviewCell[] = [];
     for (let colIndex = 1; colIndex <= maxCols; colIndex++) {
       const cell = row.getCell(colIndex);
+      const merge = mergeMap.get(`${rowNumber}:${colIndex}`);
       cells.push({
         value: getCellDisplayValue(cell),
         style: extractCellStyle(cell),
+        colSpan: merge?.colSpan,
+        rowSpan: merge?.rowSpan,
+        hidden: merge?.hidden,
       });
     }
     rows.push(cells);
@@ -125,5 +157,6 @@ export const readXlsxPreview = async (source: Blob): Promise<XlsxPreviewSheet> =
     name: worksheet.name || "Sheet1",
     rows,
     colWidths,
+    rowHeights,
   };
 };

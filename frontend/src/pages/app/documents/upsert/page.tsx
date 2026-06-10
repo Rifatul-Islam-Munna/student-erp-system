@@ -37,6 +37,7 @@ import { useTheme } from "@mui/material/styles";
 import { useSnackbar } from "notistack";
 
 import AiTemplateCanvas from "@/components/documents/ai-template-canvas";
+import XlsxPreviewTable from "@/components/documents/xlsx-preview-table";
 import {
   DEFAULT_DOCUMENT_PAGE_SETTINGS,
   getPageSettingsFromPreset,
@@ -588,6 +589,7 @@ export default function DocumentUpsert() {
   const [pendingSourceFile, setPendingSourceFile] = useState<File | null>(null);
   const [pdfSourceBlob, setPdfSourceBlob] = useState<Blob | null>(null);
   const [xlsxPreview, setXlsxPreview] = useState<XlsxPreviewSheet | null>(null);
+  const [sourcePreviewLoading, setSourcePreviewLoading] = useState(false);
   const [aiItems, setAiItems] = useState<AiTemplateItem[]>([]);
   const [selectedAiItemId, setSelectedAiItemId] = useState<string | null>(null);
   const [pdfCanvasZoom, setPdfCanvasZoom] = useState(1);
@@ -986,11 +988,14 @@ export default function DocumentUpsert() {
             setAiItems(parseAiTemplateLayout(documentData.templateContent).items);
             if ((_id || id) && (documentData.originalFileName || documentData.originalFilePath)) {
               try {
+                setSourcePreviewLoading(true);
                 const sourceBlob = await DocumentService.getTemplateSourceBlob((_id || id) as string);
                 setPdfSourceBlob(sourceBlob);
                 setXlsxPreview(null);
               } catch (sourceError) {
                 console.error("Failed to load PDF source", sourceError);
+              } finally {
+                setSourcePreviewLoading(false);
               }
             }
           } else if (documentData.documentFormat === "xlsx") {
@@ -998,11 +1003,14 @@ export default function DocumentUpsert() {
             setPdfSourceBlob(null);
             if ((_id || id) && (documentData.originalFileName || documentData.originalFilePath)) {
               try {
+                setSourcePreviewLoading(true);
                 const sourceBlob = await DocumentService.getTemplateSourceBlob((_id || id) as string);
                 const preview = await readXlsxPreview(sourceBlob);
                 setXlsxPreview(preview);
               } catch (sourceError) {
                 console.error("Failed to load XLSX source", sourceError);
+              } finally {
+                setSourcePreviewLoading(false);
               }
             }
           } else {
@@ -1654,11 +1662,13 @@ export default function DocumentUpsert() {
     formik.setFieldValue("fileType", extension);
     formik.setFieldValue("originalFileName", file.name);
     if (formik.values.documentFormat === "xlsx") {
-      void readXlsxPreview(file).then(setXlsxPreview).catch(() => setXlsxPreview(null));
+      setSourcePreviewLoading(true);
+      void readXlsxPreview(file).then(setXlsxPreview).catch(() => setXlsxPreview(null)).finally(() => setSourcePreviewLoading(false));
       setPdfSourceBlob(null);
     } else {
       setPdfSourceBlob(file);
       setXlsxPreview(null);
+      setSourcePreviewLoading(false);
     }
     if (event.target) event.target.value = "";
   };
@@ -1941,29 +1951,36 @@ export default function DocumentUpsert() {
                           onChange={handleFontUpload}
                           style={{ display: "none" }}
                         />
-                        <Box sx={{ display: 'flex', gap: 3, alignItems: 'flex-start', flexDirection: { xs: 'column', xl: 'row' } }}>
+                        <Box sx={{ display: 'block' }}>
                           <Box sx={{ flex: 1, minWidth: 0 }}>
-                            <AiTemplateCanvas
-                              editable
-                              items={aiItems}
-                              selectedItemId={selectedAiItemId}
-                              sourceBlob={pdfSourceBlob}
-                              pageWidthMm={pageSettings.widthMm}
-                              pageHeightMm={pageSettings.heightMm}
-                              marginTopMm={pageSettings.marginTopMm}
-                              marginRightMm={pageSettings.marginRightMm}
-                              marginBottomMm={pageSettings.marginBottomMm}
-                              marginLeftMm={pageSettings.marginLeftMm}
-                              zoom={pdfCanvasZoom}
-                              showGrid={pdfShowGrid}
-                              showGuides={pdfShowGuides}
-                              showRulers={pdfShowRulers}
-                              snapToGrid={pdfSnapToGrid}
-                              onItemSelect={setSelectedAiItemId}
-                              onItemsChange={setAiItems}
-                            />
+                            {sourcePreviewLoading ? (
+                              <Box className="rounded-2xl border border-divider bg-slate-50 p-10 text-center">
+                                <Typography variant="body1">{t("Loading PDF preview...")}</Typography>
+                              </Box>
+                            ) : (
+                              <AiTemplateCanvas
+                                editable
+                                items={aiItems}
+                                selectedItemId={selectedAiItemId}
+                                sourceBlob={pdfSourceBlob}
+                                pageWidthMm={pageSettings.widthMm}
+                                pageHeightMm={pageSettings.heightMm}
+                                marginTopMm={pageSettings.marginTopMm}
+                                marginRightMm={pageSettings.marginRightMm}
+                                marginBottomMm={pageSettings.marginBottomMm}
+                                marginLeftMm={pageSettings.marginLeftMm}
+                                zoom={pdfCanvasZoom}
+                                showGrid={pdfShowGrid}
+                                showGuides={pdfShowGuides}
+                                showRulers={pdfShowRulers}
+                                snapToGrid={pdfSnapToGrid}
+                                onItemSelect={setSelectedAiItemId}
+                                onItemsChange={setAiItems}
+                              />
+                            )}
                           </Box>
-                          <Card variant="outlined" sx={{ borderRadius: 4, position: { xl: 'sticky' }, top: { xl: 20 }, width: { xl: 380 }, flexShrink: 0, maxHeight: { xl: 'calc(100vh - 40px)' }, overflowY: { xl: 'auto' } }}>
+                        </Box>
+                        <Card variant="outlined" sx={{ borderRadius: 4, mt: 3 }}>
                             <CardContent className="space-y-3">
                               <Typography variant="h6">{t("Selected Item Style")}</Typography>
                               {!selectedPdfItem ? (
@@ -2130,7 +2147,6 @@ export default function DocumentUpsert() {
                               )}
                             </CardContent>
                           </Card>
-                        </Box>
                         <input
                           ref={sourceUploadInputRef}
                           type="file"
@@ -2175,45 +2191,14 @@ export default function DocumentUpsert() {
                       <Card variant="outlined" sx={{ borderRadius: 4 }}>
                         <CardContent className="space-y-3">
                           <Typography variant="h6">{t("First Sheet Preview")}</Typography>
-                          {!xlsxPreview ? (
+                          {sourcePreviewLoading ? (
+                            <Typography variant="body2" color="text.secondary">{t("Loading XLSX preview...")}</Typography>
+                          ) : !xlsxPreview ? (
                             <Typography variant="body2" color="text.secondary">{t("Upload XLSX to preview first sheet here.")}</Typography>
                           ) : (
                             <>
                               <Chip label={xlsxPreview.name} size="small" variant="outlined" />
-                              <Box className="overflow-auto rounded-xl border border-divider">
-                                <table className="min-w-full border-collapse text-sm">
-                                  {xlsxPreview.colWidths && xlsxPreview.colWidths.length > 0 && (
-                                    <colgroup>
-                                      {xlsxPreview.colWidths.map((w, i) => (
-                                        <col key={`col-w-${i}`} style={{ width: w, minWidth: w }} />
-                                      ))}
-                                    </colgroup>
-                                  )}
-                                  <tbody>
-                                    {xlsxPreview.rows.map((row, rowIndex) => (
-                                      <tr key={`xlsx-row-${rowIndex}`}>
-                                        {row.map((cell, cellIndex) => (
-                                          <td
-                                            key={`xlsx-cell-${rowIndex}-${cellIndex}`}
-                                            className="border border-slate-200 px-3 py-2 align-top"
-                                            style={{
-                                              fontWeight: cell.style?.bold ? 'bold' : undefined,
-                                              fontStyle: cell.style?.italic ? 'italic' : undefined,
-                                              textDecoration: [cell.style?.underline ? 'underline' : '', cell.style?.strike ? 'line-through' : ''].filter(Boolean).join(' ') || undefined,
-                                              color: cell.style?.color || undefined,
-                                              backgroundColor: cell.style?.bgColor || undefined,
-                                              fontSize: cell.style?.fontSize ? `${cell.style.fontSize}pt` : undefined,
-                                              textAlign: (cell.style?.hAlign as React.CSSProperties['textAlign']) || undefined,
-                                            }}
-                                          >
-                                            {cell.value || "\u00A0"}
-                                          </td>
-                                        ))}
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </Box>
+                              <XlsxPreviewTable sheet={xlsxPreview} />
                             </>
                           )}
                         </CardContent>

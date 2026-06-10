@@ -26,6 +26,7 @@ import { DocumentService } from "@/services/documentService";
 import { SettingService } from "@/services/settingService";
 import { StudentService } from "@/services/studentService";
 import AiTemplateCanvas from "@/components/documents/ai-template-canvas";
+import XlsxPreviewTable from "@/components/documents/xlsx-preview-table";
 import { parseAiTemplateLayout } from "@/types/aiTemplate";
 import { SettingDocument } from "@/types/setting";
 import { DocumentTemplate } from "@/types/document";
@@ -53,6 +54,7 @@ export default function DocumentView() {
   const [settings, setSettings] = useState<SettingDocument | null>(null);
   const [sourceBlob, setSourceBlob] = useState<Blob | null>(null);
   const [xlsxPreview, setXlsxPreview] = useState<XlsxPreviewSheet | null>(null);
+  const [sourcePreviewLoading, setSourcePreviewLoading] = useState(false);
   const [generateError, setGenerateError] = useState("");
   const [generating, setGenerating] = useState(false);
 
@@ -66,6 +68,7 @@ export default function DocumentView() {
           setDocument(response.data);
           setStudentId(searchParams.get("studentId") || "");
           if ((response.data.documentFormat === "pdf" || response.data.documentFormat === "xlsx") && response.data._id && response.data.originalFileName) {
+            setSourcePreviewLoading(true);
             const blob = await DocumentService.getTemplateSourceBlob(response.data._id);
             setSourceBlob(blob);
             if (response.data.documentFormat === "pdf") {
@@ -75,12 +78,14 @@ export default function DocumentView() {
             } else {
               setXlsxPreview(await readXlsxPreview(blob));
             }
+            setSourcePreviewLoading(false);
           }
         }
       } catch (error) {
         console.error("Failed to fetch document", error);
       } finally {
         setLoading(false);
+        setSourcePreviewLoading(false);
       }
     };
 
@@ -297,7 +302,11 @@ export default function DocumentView() {
               <CardContent className="space-y-4">
                 <Alert severity="info">{t("This template uses PDF layout preview. Variables and text are placed visually over the uploaded PDF.")}</Alert>
                 <Typography variant="body2" color="text.secondary">{document.originalFileName || t("No source file uploaded yet")}</Typography>
-                {sourceBlob && (
+                {sourcePreviewLoading ? (
+                  <Box className="rounded-2xl border border-divider bg-slate-50 p-10 text-center">
+                    <Typography variant="body1">{t("Loading PDF preview...")}</Typography>
+                  </Box>
+                ) : sourceBlob && (
                   <AiTemplateCanvas
                     items={resolvePdfLayoutItems(parseAiTemplateLayout(document.templateContent).items, student, settings)}
                     sourceBlob={sourceBlob}
@@ -312,45 +321,14 @@ export default function DocumentView() {
               <CardContent className="space-y-4">
                 <Alert severity="info">{t("This template uses XLSX preview. Variables stay inside the Excel file and download remains XLSX.")}</Alert>
                 <Typography variant="body2" color="text.secondary">{document.originalFileName || t("No source file uploaded yet")}</Typography>
-                {!xlsxPreview ? (
+                {sourcePreviewLoading ? (
+                  <Typography variant="body2" color="text.secondary">{t("Loading XLSX preview...")}</Typography>
+                ) : !xlsxPreview ? (
                   <Typography variant="body2" color="text.secondary">{t("No XLSX preview available.")}</Typography>
                 ) : (
                   <>
                     <Chip label={xlsxPreview.name} size="small" variant="outlined" />
-                    <Box className="overflow-auto rounded-xl border border-divider">
-                      <table className="min-w-full border-collapse text-sm">
-                        {xlsxPreview.colWidths && xlsxPreview.colWidths.length > 0 && (
-                          <colgroup>
-                            {xlsxPreview.colWidths.map((w, i) => (
-                              <col key={`view-col-w-${i}`} style={{ width: w, minWidth: w }} />
-                            ))}
-                          </colgroup>
-                        )}
-                        <tbody>
-                          {xlsxPreview.rows.map((row, rowIndex) => (
-                            <tr key={`view-xlsx-row-${rowIndex}`}>
-                              {row.map((cell, cellIndex) => (
-                                <td
-                                  key={`view-xlsx-cell-${rowIndex}-${cellIndex}`}
-                                  className="border border-slate-200 px-3 py-2 align-top"
-                                  style={{
-                                    fontWeight: cell.style?.bold ? 'bold' : undefined,
-                                    fontStyle: cell.style?.italic ? 'italic' : undefined,
-                                    textDecoration: [cell.style?.underline ? 'underline' : '', cell.style?.strike ? 'line-through' : ''].filter(Boolean).join(' ') || undefined,
-                                    color: cell.style?.color || undefined,
-                                    backgroundColor: cell.style?.bgColor || undefined,
-                                    fontSize: cell.style?.fontSize ? `${cell.style.fontSize}pt` : undefined,
-                                    textAlign: (cell.style?.hAlign as React.CSSProperties['textAlign']) || undefined,
-                                  }}
-                                >
-                                  {cell.value || "\u00A0"}
-                                </td>
-                              ))}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </Box>
+                    <XlsxPreviewTable sheet={xlsxPreview} />
                   </>
                 )}
               </CardContent>
