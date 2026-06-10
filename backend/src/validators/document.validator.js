@@ -3,7 +3,7 @@ import Joi from 'joi';
 export const createDocumentTemplateSchema = Joi.object({
     name: Joi.string().required().trim(),
     docType: Joi.string().valid('system', 'student', 'other').required().trim(),
-    documentFormat: Joi.string().valid('html', 'pdf', 'xlsx', 'fillable_pdf').default('html'),
+    documentFormat: Joi.string().valid('html', 'pdf', 'xlsx', 'fillable_pdf', 'docx').default('html'),
     fileType: Joi.string().allow('', null).trim(),
     templateContent: Joi.string().allow('', null),
     shortcodes: Joi.array().items(Joi.string()).default([]),
@@ -32,7 +32,7 @@ export const createDocumentTemplateSchema = Joi.object({
 export const updateDocumentTemplateSchema = Joi.object({
     name: Joi.string().trim().optional(),
     docType: Joi.string().valid('system', 'student', 'other').trim().optional(),
-    documentFormat: Joi.string().valid('html', 'pdf', 'xlsx', 'fillable_pdf').optional(),
+    documentFormat: Joi.string().valid('html', 'pdf', 'xlsx', 'fillable_pdf', 'docx').optional(),
     fileType: Joi.string().allow('', null).trim().optional(),
     templateContent: Joi.string().allow('', null).optional(),
     shortcodes: Joi.array().items(Joi.string()).optional(),
@@ -63,12 +63,13 @@ export const queryDocumentTemplateSchema = Joi.object({
     limit: Joi.number().min(1).max(100).default(10),
     search: Joi.string().optional(),
     docType: Joi.string().valid('system', 'student', 'other').optional(),
-    documentFormat: Joi.string().valid('html', 'pdf', 'xlsx', 'fillable_pdf').optional(),
+    documentFormat: Joi.string().valid('html', 'pdf', 'xlsx', 'fillable_pdf', 'docx').optional(),
     status: Joi.string().valid('draft', 'active', 'inactive').optional(),
     isActive: Joi.boolean().optional()
 });
 
 export const generateDocumentSchema = Joi.object({
     templateId: Joi.string().required(),
-    studentId: Joi.string().allow('', null).optional()
+    studentId: Joi.string().allow('', null).optional(),
+    outputFormat: Joi.string().valid('pdf', 'docx', 'xlsx').optional()
 });

@@ -1,8 +1,13 @@
 import crypto from 'crypto';
+import { execFile } from 'child_process';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
+import Docxtemplater from 'docxtemplater';
 import ExcelJS from 'exceljs';
 import { PDFCheckBox, PDFDocument, PDFDropdown, PDFOptionList, PDFRadioGroup, PDFTextField } from 'pdf-lib';
+import InspectModule from 'docxtemplater/js/inspect-module.js';
+import PizZip from 'pizzip';
 import puppeteer from 'puppeteer';
 import XLSX from 'xlsx';
 import { fileURLToPath } from 'url';
@@ -19,6 +24,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const UPLOAD_DIR = path.join(__dirname, '../../uploads/templates');
 const GENERATED_DIR = path.join(__dirname, '../../uploads/generated');
+const KNOWN_SOFFICE_PATHS = [
+    process.env.SOFFICE_PATH,
+    'C:\\Program Files\\LibreOffice\\program\\soffice.exe',
+    'C:\\Program Files (x86)\\LibreOffice\\program\\soffice.exe'
+].filter(Boolean);
 
 const PAGE_PRESETS = {
     A4: { widthMm: 210, heightMm: 297 },
@@ -146,6 +156,62 @@ const extractFillablePdfVariables = async (filePath) => {
     );
 };
 
+const normalizeDocxTagName = (tag = '') => String(tag || '').trim();
+const DOCX_TAG_WRAPPER_KEYS = new Set(['headers', 'footers', 'document', 'target', 'tags']);
+
+const collectDocxPlaceholderNames = (node, bucket = new Set()) => {
+    if (!node) return bucket;
+
+    if (Array.isArray(node)) {
+        node.forEach((item) => collectDocxPlaceholderNames(item, bucket));
+        return bucket;
+    }
+
+    if (typeof node !== 'object') {
+        return bucket;
+    }
+
+    Object.entries(node).forEach(([key, value]) => {
+        if (key === 'tags' && value && typeof value === 'object') {
+            collectDocxPlaceholderNames(value, bucket);
+            return;
+        }
+
+        if (!DOCX_TAG_WRAPPER_KEYS.has(key) && key !== 'undefined') {
+            bucket.add(normalizeDocxTagName(key));
+        }
+
+        if (value && typeof value === 'object') {
+            collectDocxPlaceholderNames(value, bucket);
+        }
+    });
+
+    return bucket;
+};
+
+const extractDocxVariables = async (filePath) => {
+    const content = fs.readFileSync(filePath, 'binary');
+    const zip = new PizZip(content);
+    const inspectModule = InspectModule();
+    const doc = new Docxtemplater(zip, {
+        modules: [inspectModule],
+        delimiters: { start: '{{', end: '}}' },
+        paragraphLoop: true,
+        linebreaks: true,
+        parser: (tag) => {
+            const normalizedTag = normalizeDocxTagName(tag);
+            return {
+                get: () => normalizedTag
+            };
+        }
+    });
+
+    const tags = collectDocxPlaceholderNames(doc.getTags());
+    return Array.from(tags)
+        .filter(Boolean)
+        .map((tag) => `{{${tag}}}`);
+};
+
 const normalizePageSettings = (pageSettings = {}) => {
     const preset = pageSettings.preset || 'A4';
     const orientation = pageSettings.orientation === 'landscape' ? 'landscape' : 'portrait';
@@ -214,6 +280,14 @@ const findMissingVariables = (template = {}, variableMap = {}) => {
         return value == null || String(value).trim() === '';
     });
 };
+
+const toDocxDataMap = (variableMap = {}) =>
+    Object.fromEntries(
+        Object.entries(variableMap).map(([key, value]) => [
+            key.replace(/^\{\{/, '').replace(/\}\}$/, '').trim(),
+            value == null ? '' : String(value)
+        ])
+    );
 
 const isTruthyPdfValue = (value = '') => ['true', 'yes', '1', 'on', 'checked'].includes(String(value).trim().toLowerCase());
 
@@ -519,6 +593,45 @@ const buildPrintHtml = ({ template, content, title }) => {
 </html>`;
 };
 
+const findSofficePath = () => KNOWN_SOFFICE_PATHS.find((candidate) => candidate && fs.existsSync(candidate)) || null;
+
+const convertDocxBufferToPdf = async (buffer, baseName = 'document') => {
+    const sofficePath = findSofficePath();
+    if (!sofficePath) {
+        const error = new Error('DOCX to PDF conversion is not available because LibreOffice is not installed on server.');
+        error.code = 'SOFFICE_MISSING';
+        throw error;
+    }
+
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agencybook-docx-'));
+    const inputPath = path.join(tempDir, `${baseName}.docx`);
+    const outputPath = path.join(tempDir, `${baseName}.pdf`);
+
+    fs.writeFileSync(inputPath, buffer);
+
+    try {
+        await new Promise((resolve, reject) => {
+            execFile(
+                sofficePath,
+                ['--headless', '--convert-to', 'pdf', '--outdir', tempDir, inputPath],
+                { windowsHide: true, timeout: 120000 },
+                (error) => {
+                    if (error) reject(error);
+                    else resolve();
+                }
+            );
+        });
+
+        if (!fs.existsSync(outputPath)) {
+            throw new Error('LibreOffice did not produce PDF output.');
+        }
+
+        return fs.readFileSync(outputPath);
+    } finally {
+        try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch (_) { /* ignore */ }
+    }
+};
+
 const serializeTemplate = (template) => {
     const record = typeof template?.toObject === 'function' ? template.toObject() : template;
     if (!record) return record;
@@ -616,7 +729,7 @@ export const updateTemplate = async (request, reply) => {
             payload.pageSettings = normalizePageSettings(payload.pageSettings);
         }
 
-        if (payload.templateContent !== undefined && payload.documentFormat !== 'xlsx' && payload.documentFormat !== 'fillable_pdf') {
+        if (payload.templateContent !== undefined && payload.documentFormat !== 'xlsx' && payload.documentFormat !== 'fillable_pdf' && payload.documentFormat !== 'docx') {
             payload.shortcodes = extractTemplateVariables(payload.templateContent || '');
         }
 
@@ -699,6 +812,16 @@ export const uploadTemplateFile = async (request, reply) => {
                 logger.error({ err: pdfError, filePath, fileName: data.filename }, 'Failed to parse uploaded fillable PDF template');
                 return reply.code(400).send({ success: false, message: 'Invalid fillable PDF file. Please upload a real fillable PDF with named form fields.' });
             }
+        } else if (template.documentFormat === 'docx') {
+            try {
+                template.shortcodes = await extractDocxVariables(filePath);
+            } catch (docxError) {
+                if (fs.existsSync(filePath)) {
+                    try { fs.unlinkSync(filePath); } catch (_) { /* ignore */ }
+                }
+                logger.error({ err: docxError, filePath, fileName: data.filename }, 'Failed to parse uploaded DOCX template');
+                return reply.code(400).send({ success: false, message: 'Invalid DOCX file. Please upload a real Word .docx template with variables like {{name_en}}.' });
+            }
         }
         await template.save();
 
@@ -729,7 +852,7 @@ export const downloadTemplateSource = async (request, reply) => {
 export const generateDocument = async (request, reply) => {
     let browser = null;
     try {
-        const { templateId, studentId } = request.body;
+        const { templateId, studentId, outputFormat } = request.body;
 
         const [template, student, settingsDoc] = await Promise.all([
             DocumentTemplate.findById(templateId).lean(),
@@ -757,7 +880,8 @@ export const generateDocument = async (request, reply) => {
                 ...(student ? buildStudentVariableMap(student) : {})
             };
 
-            const missingVariables = findMissingVariables(template, variableMap);
+            const templateVariables = await extractDocxVariables(template.originalFilePath);
+            const missingVariables = findMissingVariables({ ...template, shortcodes: templateVariables }, variableMap);
             if (missingVariables.length > 0) {
                 return reply.code(400).send({
                     success: false,
@@ -841,6 +965,75 @@ export const generateDocument = async (request, reply) => {
             const fileName = `${template.name.replace(/[^a-z0-9_-]+/gi, '_')}_${Date.now()}.pdf`;
             reply.header('Content-Type', 'application/pdf');
             reply.header('Content-Disposition', `attachment; filename="${fileName}"`);
+            reply.header('Content-Length', buffer.length);
+            return reply.send(buffer);
+        }
+        if (template.documentFormat === 'docx') {
+            if (!template.originalFilePath || !fs.existsSync(template.originalFilePath)) {
+                return reply.code(404).send({ success: false, message: 'DOCX source file not found.' });
+            }
+            if (template.docType === 'student' && !student) {
+                return reply.code(400).send({ success: false, message: 'Student document needs valid student.' });
+            }
+
+            const variableMap = {
+                ...buildSystemVariableMap(settingsDoc),
+                ...(student ? buildStudentVariableMap(student) : {})
+            };
+
+            const missingVariables = findMissingVariables(template, variableMap);
+            if (missingVariables.length > 0) {
+                return reply.code(400).send({
+                    success: false,
+                    message: missingVariables.length === 1
+                        ? '1 variable is missing. Please fix it first.'
+                        : `${missingVariables.length} variables are missing. Please fix them first.`,
+                    missingVariables,
+                    missingCount: missingVariables.length
+                });
+            }
+
+            const docxData = toDocxDataMap(variableMap);
+            const content = fs.readFileSync(template.originalFilePath, 'binary');
+            const zip = new PizZip(content);
+            const doc = new Docxtemplater(zip, {
+                delimiters: { start: '{{', end: '}}' },
+                paragraphLoop: true,
+                linebreaks: true,
+                parser: (tag) => {
+                    const normalizedTag = normalizeDocxTagName(tag);
+                    return {
+                        get: () => docxData[normalizedTag] ?? ''
+                    };
+                },
+                nullGetter: () => ''
+            });
+
+            doc.render({});
+
+            const buffer = Buffer.from(doc.getZip().generate({ type: 'nodebuffer' }));
+            const safeBaseName = `${template.name.replace(/[^a-z0-9_-]+/gi, '_')}_${Date.now()}`;
+
+            if (outputFormat === 'pdf') {
+                try {
+                    const pdfBuffer = await convertDocxBufferToPdf(buffer, safeBaseName);
+                    reply.header('Content-Type', 'application/pdf');
+                    reply.header('Content-Disposition', `attachment; filename="${safeBaseName}.pdf"`);
+                    reply.header('Content-Length', pdfBuffer.length);
+                    return reply.send(pdfBuffer);
+                } catch (conversionError) {
+                    logger.error(conversionError);
+                    return reply.code(501).send({
+                        success: false,
+                        message: conversionError.code === 'SOFFICE_MISSING'
+                            ? 'DOCX to PDF conversion is not available on server yet. Install LibreOffice first.'
+                            : 'Failed to convert DOCX to PDF.'
+                    });
+                }
+            }
+
+            reply.header('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+            reply.header('Content-Disposition', `attachment; filename="${safeBaseName}.docx"`);
             reply.header('Content-Length', buffer.length);
             return reply.send(buffer);
         }

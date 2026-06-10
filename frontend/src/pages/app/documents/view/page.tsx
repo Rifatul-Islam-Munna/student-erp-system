@@ -14,6 +14,7 @@ import {
   Grid,
   IconButton,
   Paper,
+  Skeleton,
   TextField,
   Typography,
 } from "@mui/material";
@@ -57,6 +58,8 @@ export default function DocumentView() {
   const [sourcePreviewLoading, setSourcePreviewLoading] = useState(false);
   const [generateError, setGenerateError] = useState("");
   const [generating, setGenerating] = useState(false);
+  const [docxPreviewHtml, setDocxPreviewHtml] = useState("");
+  const [docxPreviewLoading, setDocxPreviewLoading] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -67,7 +70,7 @@ export default function DocumentView() {
         if (response.success && response.data) {
           setDocument(response.data);
           setStudentId(searchParams.get("studentId") || "");
-          if ((response.data.documentFormat === "pdf" || response.data.documentFormat === "xlsx" || response.data.documentFormat === "fillable_pdf") && response.data._id && response.data.originalFileName) {
+          if ((response.data.documentFormat === "pdf" || response.data.documentFormat === "xlsx" || response.data.documentFormat === "fillable_pdf" || response.data.documentFormat === "docx") && response.data._id && response.data.originalFileName) {
             setSourcePreviewLoading(true);
             const blob = await DocumentService.getTemplateSourceBlob(response.data._id);
             setSourceBlob(blob);
@@ -177,6 +180,31 @@ export default function DocumentView() {
       }
       return;
     }
+    if (document.documentFormat === "docx") {
+      if (document.docType === "student" && !studentId.trim()) {
+        setGenerateError("Student ID required for student document");
+        return;
+      }
+
+      setGenerating(true);
+      setGenerateError("");
+      try {
+        await DocumentService.generateAndDownloadFile(
+          {
+            templateId: document._id,
+            studentId: document.docType === "student" ? studentId.trim() : undefined,
+            outputFormat: "docx",
+          },
+          document.name,
+        );
+      } catch (error) {
+        console.error("Failed to generate docx document", error);
+        setGenerateError("Failed to generate document");
+      } finally {
+        setGenerating(false);
+      }
+      return;
+    }
     if (document.docType === "student" && !studentId.trim()) {
       setGenerateError("Student ID required for student document");
       return;
@@ -198,6 +226,60 @@ export default function DocumentView() {
       setGenerateError("Failed to generate document");
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handleGenerateDocxPdf = async () => {
+    if (!document?._id || document.documentFormat !== "docx") return;
+    if (document.docType === "student" && !studentId.trim()) {
+      setGenerateError("Student ID required for student document");
+      return;
+    }
+
+    setGenerating(true);
+    setGenerateError("");
+    try {
+      await DocumentService.generateAndDownloadFile(
+        {
+          templateId: document._id,
+          studentId: document.docType === "student" ? studentId.trim() : undefined,
+          outputFormat: "pdf",
+        },
+        `${document.name}.pdf`,
+      );
+    } catch (error: any) {
+      console.error("Failed to convert docx to pdf", error);
+      setGenerateError(error?.message || "Failed to convert DOCX to PDF");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleLoadDocxPreview = async () => {
+    if (!document?._id || document.documentFormat !== "docx") return;
+    if (document.docType === "student" && !studentId.trim()) {
+      setGenerateError("Student ID required for student document");
+      return;
+    }
+
+    setDocxPreviewLoading(true);
+    setGenerateError("");
+    try {
+      const { blob } = await DocumentService.generateFileBlob({
+        templateId: document._id,
+        studentId: document.docType === "student" ? studentId.trim() : undefined,
+        outputFormat: "docx",
+      });
+      const arrayBuffer = await blob.arrayBuffer();
+      const mammoth = await import("mammoth");
+      const result = await mammoth.convertToHtml({ arrayBuffer });
+      setDocxPreviewHtml(result.value || "<p></p>");
+    } catch (error: any) {
+      console.error("Failed to preview docx", error);
+      setGenerateError(error?.message || "Failed to load DOCX preview");
+      setDocxPreviewHtml("");
+    } finally {
+      setDocxPreviewLoading(false);
     }
   };
 
@@ -235,9 +317,19 @@ export default function DocumentView() {
           <Button variant="surface" color="primary" startIcon={<NiPen size="medium" />} onClick={() => navigate(`/${role}/documents/edit/${document._id}`)}>
             {t("Edit")}
           </Button>
+          {document.documentFormat === "docx" && (
+            <Button variant="surface" color="grey" onClick={() => void handleLoadDocxPreview()} disabled={docxPreviewLoading}>
+              {docxPreviewLoading ? t("Loading Preview...") : t("Preview Final DOCX")}
+            </Button>
+          )}
           <Button variant="surface" color="grey" startIcon={<NiPrinter size="medium" />} onClick={handleGenerate} disabled={generating}>
-            {generating ? t("Preparing...") : t(document.documentFormat === "pdf" ? "Print PDF" : document.documentFormat === "xlsx" ? "Download XLSX" : document.documentFormat === "fillable_pdf" ? "Download Filled PDF" : "Generate PDF")}
+            {generating ? t("Preparing...") : t(document.documentFormat === "pdf" ? "Print PDF" : document.documentFormat === "xlsx" ? "Download XLSX" : document.documentFormat === "fillable_pdf" ? "Download Filled PDF" : document.documentFormat === "docx" ? "Download DOCX" : "Generate PDF")}
           </Button>
+          {document.documentFormat === "docx" && (
+            <Button variant="surface" color="grey" onClick={() => void handleGenerateDocxPdf()} disabled={generating}>
+              {t("Download PDF")}
+            </Button>
+          )}
         </Box>
       </Box>
 
@@ -249,7 +341,7 @@ export default function DocumentView() {
               <Box className="flex flex-wrap gap-2">
                 <Chip label={t(document.docType)} color={document.docType === "student" ? "primary" : document.docType === "system" ? "warning" : "default"} variant="outlined" />
                 <Chip label={t(document.status)} color={getStatusColor(document.status)} />
-                <Chip label={t(document.documentFormat === "pdf" ? "PDF Layout Builder" : document.documentFormat === "xlsx" ? "XLSX Template" : document.documentFormat === "fillable_pdf" ? "Fillable PDF" : "Rich Document / PDF")} variant="outlined" />
+                <Chip label={t(document.documentFormat === "pdf" ? "PDF Layout Builder" : document.documentFormat === "xlsx" ? "XLSX Template" : document.documentFormat === "fillable_pdf" ? "Fillable PDF" : document.documentFormat === "docx" ? "DOCX Template" : "Rich Document / PDF")} variant="outlined" />
                 <Chip label={document.pageSettings?.preset || "A4"} variant="outlined" />
               </Box>
               <Typography color="text.secondary">{document.description || t("No internal note")}</Typography>
@@ -281,6 +373,8 @@ export default function DocumentView() {
                   ? t("XLSX templates download as real XLSX files with variables replaced from student and system data.")
                   : document.documentFormat === "fillable_pdf"
                   ? t("Fillable PDF templates download as PDF files with named PDF form fields filled from student and system data.")
+                  : document.documentFormat === "docx"
+                  ? t("DOCX templates download as Word files with {{variable}} placeholders replaced from student and system data.")
                   : document.docType === "student"
                   ? t("Student template replaces student variables before download.")
                   : t("System and other templates download with current system variables only.")}
@@ -355,6 +449,35 @@ export default function DocumentView() {
                   />
                 ) : (
                   <Typography variant="body2" color="text.secondary">{t("No PDF preview available.")}</Typography>
+                )}
+              </CardContent>
+            </Card>
+          ) : document.documentFormat === "docx" ? (
+            <Card className="rounded-[24px] shadow-sm">
+              <CardContent className="space-y-4">
+                <Alert severity="info">{t("This template uses a native Word DOCX file with placeholders like {{name_en}}. Generated output stays DOCX.")}</Alert>
+                <Typography variant="body2" color="text.secondary">{document.originalFileName || t("No source file uploaded yet")}</Typography>
+                {docxPreviewLoading ? (
+                  <Box className="space-y-3">
+                    <Skeleton variant="rounded" height={36} />
+                    <Skeleton variant="rounded" height={180} />
+                    <Skeleton variant="rounded" height={180} />
+                  </Box>
+                ) : docxPreviewHtml ? (
+                  <Paper className="overflow-auto rounded-[28px] bg-[#dde5ee] p-5 shadow-sm">
+                    <Box className="mx-auto rounded-[14px] border border-slate-200 bg-white p-8 shadow-[0_24px_70px_rgba(15,23,42,0.16)]">
+                      <Box
+                        sx={{
+                          "& table": { width: "100%", borderCollapse: "collapse" },
+                          "& td, & th": { border: "1px solid", borderColor: "divider", p: 1 },
+                          "& img": { maxWidth: "100%" },
+                        }}
+                        dangerouslySetInnerHTML={{ __html: docxPreviewHtml }}
+                      />
+                    </Box>
+                  </Paper>
+                ) : (
+                  <Typography variant="body2" color="text.secondary">{t("Click Preview Final DOCX to see final data before download.")}</Typography>
                 )}
               </CardContent>
             </Card>

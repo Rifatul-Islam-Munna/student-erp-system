@@ -223,8 +223,8 @@ export default function StudentsIndex() {
   const handleGenerateStudentDocument = async (template: DocumentTemplate) => {
     if (!documentStudent?._id || !template._id) return;
 
-    if (template.documentFormat === "pdf") {
-      enqueueSnackbar(t("PDF layout template opening. Review it and print with student data."), {
+    if (template.documentFormat === "pdf" || template.documentFormat === "docx") {
+      enqueueSnackbar(t(template.documentFormat === "docx" ? "DOCX template opening. Review preview and download with student data." : "PDF layout template opening. Review it and print with student data."), {
         variant: "info",
       });
       navigate(`/${role}/documents/view/${template._id}?studentId=${documentStudent._id}`);

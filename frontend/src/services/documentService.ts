@@ -134,7 +134,7 @@ export const DocumentService = {
     return fetchApi("/documents/shortcodes");
   },
 
-  generateAndDownloadFile: async (data: { templateId: string; studentId?: string }, fileName: string) => {
+  generateFileBlob: async (data: { templateId: string; studentId?: string; outputFormat?: "pdf" | "docx" | "xlsx" }) => {
     const token = localStorage.getItem("auth_token");
     const apiBase = import.meta.env.VITE_API_URL || "http://localhost:3000/api/v1";
 
@@ -155,16 +155,22 @@ export const DocumentService = {
     }
 
     const blob = await response.blob();
-    const { saveAs } = await import("file-saver");
     const disposition = response.headers.get("Content-Disposition") || "";
     const matchedFileName = disposition.match(/filename="([^"]+)"/i)?.[1];
     const contentType = response.headers.get("Content-Type") || "";
+
+    return { blob, matchedFileName, contentType };
+  },
+
+  generateAndDownloadFile: async (data: { templateId: string; studentId?: string; outputFormat?: "pdf" | "docx" | "xlsx" }, fileName: string) => {
+    const { blob, matchedFileName, contentType } = await DocumentService.generateFileBlob(data);
+    const { saveAs } = await import("file-saver");
     const extension = matchedFileName?.split(".").pop()
-      || (contentType.includes("spreadsheetml") ? "xlsx" : "pdf");
+      || (contentType.includes("spreadsheetml") ? "xlsx" : contentType.includes("wordprocessingml") ? "docx" : "pdf");
     const normalizedFileName = matchedFileName || (fileName.endsWith(`.${extension}`) ? fileName : `${fileName}.${extension}`);
     saveAs(blob, normalizedFileName);
   },
 
-  generateAndDownloadPdf: async (data: { templateId: string; studentId?: string }, fileName: string) =>
+  generateAndDownloadPdf: async (data: { templateId: string; studentId?: string; outputFormat?: "pdf" | "docx" | "xlsx" }, fileName: string) =>
     DocumentService.generateAndDownloadFile(data, fileName),
 };

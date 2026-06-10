@@ -92,7 +92,7 @@ import { readXlsxPreview, XlsxPreviewCell, XlsxPreviewSheet } from "@/utils/xlsx
 const validationSchema = yup.object({
   name: yup.string().required("Title is required"),
   docType: yup.string().oneOf(["system", "student", "other"]).required("Document type is required"),
-  documentFormat: yup.string().oneOf(["html", "pdf", "xlsx", "fillable_pdf"]).required("Document format is required"),
+  documentFormat: yup.string().oneOf(["html", "pdf", "xlsx", "fillable_pdf", "docx"]).required("Document format is required"),
   status: yup.string().oneOf(["draft", "active", "inactive"]).required("Status is required"),
   templateContent: yup.string().when("documentFormat", {
     is: "html",
@@ -112,6 +112,7 @@ const DOCUMENT_FORMATS: { value: DocumentFormat; label: string }[] = [
   { value: "pdf", label: "PDF Layout Builder" },
   { value: "xlsx", label: "XLSX Template" },
   { value: "fillable_pdf", label: "Fillable PDF" },
+  { value: "docx", label: "DOCX Template" },
 ];
 
 const DOCUMENT_STATUSES = [
@@ -172,10 +173,10 @@ const preparePayload = (values: Partial<DocumentTemplate>, aiItems: AiTemplateIt
   templateContent:
     values.documentFormat === "pdf"
       ? serializeAiTemplateLayout({ version: 1, type: "ai-layout", items: aiItems })
-      : values.documentFormat === "xlsx" || values.documentFormat === "fillable_pdf"
+      : values.documentFormat === "xlsx" || values.documentFormat === "fillable_pdf" || values.documentFormat === "docx"
       ? ""
       : values.templateContent || "",
-  shortcodes: values.documentFormat === "pdf" ? extractAiVariables(aiItems) : values.documentFormat === "xlsx" || values.documentFormat === "fillable_pdf" ? values.shortcodes || [] : extractVariables(values.templateContent || ""),
+  shortcodes: values.documentFormat === "pdf" ? extractAiVariables(aiItems) : values.documentFormat === "xlsx" || values.documentFormat === "fillable_pdf" || values.documentFormat === "docx" ? values.shortcodes || [] : extractVariables(values.templateContent || ""),
   description: values.description || "",
   customFonts: Array.isArray(values.customFonts) ? values.customFonts : [],
   status: values.status || "draft",
@@ -955,7 +956,8 @@ export default function DocumentUpsert() {
   const isPdfFormat = formik.values.documentFormat === "pdf";
   const isXlsxFormat = formik.values.documentFormat === "xlsx";
   const isFillablePdfFormat = formik.values.documentFormat === "fillable_pdf";
-  const isSpecialFormat = isPdfFormat || isXlsxFormat || isFillablePdfFormat;
+  const isDocxFormat = formik.values.documentFormat === "docx";
+  const isSpecialFormat = isPdfFormat || isXlsxFormat || isFillablePdfFormat || isDocxFormat;
   const usedVariables = extractVariables(formik.values.templateContent || "");
   const currentCanvasZoom = Math.max(0.35, Math.min(1.5, canvasZoom));
   const availableFonts = useMemo(
@@ -1034,6 +1036,10 @@ export default function DocumentUpsert() {
                 setSourcePreviewLoading(false);
               }
             }
+          } else if (documentData.documentFormat === "docx") {
+            setAiItems(createDefaultAiTemplateLayout().items);
+            setPdfSourceBlob(null);
+            setXlsxPreview(null);
           } else {
             setAiItems(createDefaultAiTemplateLayout().items);
             setPdfSourceBlob(null);
@@ -1686,6 +1692,10 @@ export default function DocumentUpsert() {
       setSourcePreviewLoading(true);
       void readXlsxPreview(file).then(setXlsxPreview).catch(() => setXlsxPreview(null)).finally(() => setSourcePreviewLoading(false));
       setPdfSourceBlob(null);
+    } else if (formik.values.documentFormat === "docx") {
+      setPdfSourceBlob(null);
+      setXlsxPreview(null);
+      setSourcePreviewLoading(false);
     } else {
       setPdfSourceBlob(file);
       setXlsxPreview(null);
@@ -1822,6 +1832,8 @@ export default function DocumentUpsert() {
                       ? t("XLSX mode uses a real Excel template. Put variables inside the XLSX file, upload it here, preview the first sheet, and student download will stay XLSX.")
                       : isFillablePdfFormat
                       ? t("Fillable PDF mode uses a PDF with named form fields like {{name_en}}. Upload it here and student download will stay PDF with fields filled automatically.")
+                      : isDocxFormat
+                      ? t("DOCX mode uses a real Word template. Put variables like {{name_en}} inside the Word file, upload it here, and student download will stay DOCX with replaced values.")
                       : t("Rich Document mode keeps the current visual builder, custom fonts, colors, and PDF output.")}
                   </Alert>
                 </Grid>
@@ -1899,7 +1911,7 @@ export default function DocumentUpsert() {
             <CardContent>
               <Box className="mb-4 flex flex-wrap gap-2">
                 <Chip label={`${pageSettings.preset} / ${pageSettings.orientation}`} size="small" variant="outlined" />
-                <Chip label={t(isPdfFormat ? "PDF Layout Builder" : isXlsxFormat ? "XLSX Template" : isFillablePdfFormat ? "Fillable PDF" : "Rich Document / PDF")} size="small" variant="outlined" color={isSpecialFormat ? "info" : "default"} />
+                <Chip label={t(isPdfFormat ? "PDF Layout Builder" : isXlsxFormat ? "XLSX Template" : isFillablePdfFormat ? "Fillable PDF" : isDocxFormat ? "DOCX Template" : "Rich Document / PDF")} size="small" variant="outlined" color={isSpecialFormat ? "info" : "default"} />
                 {!isSpecialFormat && <Chip label={`${usedVariables.length} ${t("variables used")}`} size="small" variant="outlined" color="warning" />}
                 {formik.values.docType === "student" && <Chip label={t("Student variable mode")} size="small" color="primary" variant="outlined" />}
                 {selectedImage && <Chip label={t("Image Selected")} size="small" color="secondary" variant="outlined" onClick={() => setImageDialogOpen(true)} />}
@@ -2280,6 +2292,47 @@ export default function DocumentUpsert() {
                               pageHeightMm={pageSettings.heightMm}
                             />
                           )}
+                        </CardContent>
+                      </Card>
+                    </CardContent>
+                  </Card>
+                </Box>
+              ) : isDocxFormat ? (
+                <Box className="space-y-4">
+                  <Alert severity="info">
+                    {t("Use a DOCX Word template that already contains variables like {{name_en}}. Upload it here. We will replace those variables and generate a DOCX download for student documents.")}
+                  </Alert>
+                  <Card variant="outlined">
+                    <CardContent className="space-y-4">
+                      <Box className="flex flex-wrap items-center gap-2">
+                        <Button size="small" variant="surface" color="grey" onClick={() => sourceUploadInputRef.current?.click()}>
+                          {t("Choose DOCX")}
+                        </Button>
+                        <Button size="small" variant="surface" color="grey" startIcon={<NiClipboard size="medium" />} onClick={() => setVariableDialogOpen(true)}>
+                          {t("Open Variable Modal")}
+                        </Button>
+                        {isEdit && id && formik.values.originalFileName && (
+                          <Button size="small" variant="surface" color="primary" onClick={() => void DocumentService.downloadTemplateSource(id, formik.values.originalFileName)}>
+                            {t("Download Source")}
+                          </Button>
+                        )}
+                      </Box>
+                      <Typography variant="body2" color="text.secondary">
+                        {pendingSourceFile?.name || formik.values.originalFileName || t("No DOCX source file selected yet")}
+                      </Typography>
+                      <input
+                        ref={sourceUploadInputRef}
+                        type="file"
+                        accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        onChange={handleSourceFileSelect}
+                        style={{ display: "none" }}
+                      />
+                      <Card variant="outlined" sx={{ borderRadius: 4 }}>
+                        <CardContent className="space-y-3">
+                          <Typography variant="h6">{t("Word Template")}</Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            {t("Preview not shown here. Save document after upload, then used variables will come from the uploaded DOCX template fields/placeholders.")}
+                          </Typography>
                         </CardContent>
                       </Card>
                     </CardContent>
