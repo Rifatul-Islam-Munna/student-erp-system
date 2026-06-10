@@ -16,7 +16,7 @@ const documentTemplateSchema = new mongoose.Schema({
         type: String,
         required: true,
         trim: true,
-        enum: ['html', 'pdf'],
+        enum: ['html', 'pdf', 'xlsx'],
         default: 'html'
     },
     fileType: {

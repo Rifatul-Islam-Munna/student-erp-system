@@ -232,6 +232,23 @@ export default function StudentsIndex() {
       return;
     }
 
+    if (template.documentFormat === "xlsx") {
+      setGeneratingTemplateId(template._id);
+      try {
+        await DocumentService.generateAndDownloadFile(
+          { templateId: template._id, studentId: documentStudent._id },
+          `${template.name} - ${documentStudent.fullNameEn}`,
+        );
+        enqueueSnackbar(t("XLSX downloaded successfully."), { variant: "success" });
+        closeDocumentDialog();
+      } catch (error: any) {
+        enqueueSnackbar(error?.message || t("Failed to generate document"), { variant: "error" });
+      } finally {
+        setGeneratingTemplateId(null);
+      }
+      return;
+    }
+
     setGeneratingTemplateId(template._id);
     try {
       await DocumentService.generateAndDownloadPdf(
@@ -591,6 +608,8 @@ export default function StudentsIndex() {
                       template.description ||
                       (template.documentFormat === "pdf"
                         ? "PDF layout template"
+                        : template.documentFormat === "xlsx"
+                        ? "XLSX template"
                         : `${template.pageSettings?.preset || "A4"} / ${template.status}`)
                     }
                   />

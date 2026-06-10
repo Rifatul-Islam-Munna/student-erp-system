@@ -1,7 +1,9 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import ExcelJS from 'exceljs';
 import puppeteer from 'puppeteer';
+import XLSX from 'xlsx';
 import { fileURLToPath } from 'url';
 import { parse } from 'csv-parse';
 import { stringify } from 'csv-stringify';
@@ -103,6 +105,30 @@ const getDatePart = (value, part) => {
 
 const extractTemplateVariables = (content = '') =>
     Array.from(new Set((String(content).match(/\{\{[^}]+\}\}/g) || []).map((item) => item.trim())));
+
+const extractWorkbookVariables = async (filePath) => {
+    const workbook = XLSX.readFile(filePath, { cellFormula: true, cellHTML: false, cellText: true });
+    const found = new Set();
+
+    workbook.SheetNames.forEach((sheetName) => {
+        const worksheet = workbook.Sheets[sheetName];
+        if (!worksheet || !worksheet['!ref']) return;
+        const range = XLSX.utils.decode_range(worksheet['!ref']);
+
+        for (let row = range.s.r; row <= range.e.r; row += 1) {
+            for (let col = range.s.c; col <= range.e.c; col += 1) {
+                const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
+                const cell = worksheet[cellAddress];
+                if (!cell) continue;
+                const rawValue = cell.w || cell.v;
+                if (rawValue == null) continue;
+                extractTemplateVariables(String(rawValue)).forEach((item) => found.add(item));
+            }
+        }
+    });
+
+    return Array.from(found);
+};
 
 const normalizePageSettings = (pageSettings = {}) => {
     const preset = pageSettings.preset || 'A4';
@@ -581,8 +607,9 @@ export const uploadTemplateFile = async (request, reply) => {
         const writeStream = fs.createWriteStream(filePath);
         await new Promise((resolve, reject) => {
             data.file.pipe(writeStream);
-            data.file.on('end', resolve);
             data.file.on('error', reject);
+            writeStream.on('finish', resolve);
+            writeStream.on('error', reject);
         });
 
         if (template.originalFilePath && fs.existsSync(template.originalFilePath)) {
@@ -592,6 +619,17 @@ export const uploadTemplateFile = async (request, reply) => {
         template.originalFilePath = filePath;
         template.originalFileName = data.filename;
         template.fileType = ext.replace('.', '');
+        if (template.documentFormat === 'xlsx' || ext === '.xlsx') {
+            try {
+                template.shortcodes = await extractWorkbookVariables(filePath);
+            } catch (xlsxError) {
+                if (fs.existsSync(filePath)) {
+                    try { fs.unlinkSync(filePath); } catch (_) { /* ignore */ }
+                }
+                logger.error({ err: xlsxError, filePath, fileName: data.filename }, 'Failed to parse uploaded XLSX template');
+                return reply.code(400).send({ success: false, message: 'Invalid XLSX file or upload not completed correctly. Please upload a real .xlsx file.' });
+            }
+        }
         await template.save();
 
         return reply.send({ success: true, message: 'File uploaded successfully.', data: serializeTemplate(template) });
@@ -635,6 +673,68 @@ export const generateDocument = async (request, reply) => {
                 success: false,
                 message: 'PDF layout templates are frontend print templates. Open the template preview and print from there.'
             });
+        }
+        if (template.documentFormat === 'xlsx') {
+            if (!template.originalFilePath || !fs.existsSync(template.originalFilePath)) {
+                return reply.code(404).send({ success: false, message: 'XLSX source file not found.' });
+            }
+            if (template.docType === 'student' && !student) {
+                return reply.code(400).send({ success: false, message: 'Student document needs valid student.' });
+            }
+
+            const variableMap = {
+                ...buildSystemVariableMap(settingsDoc),
+                ...(student ? buildStudentVariableMap(student) : {})
+            };
+
+            const missingVariables = findMissingVariables(template, variableMap);
+            if (missingVariables.length > 0) {
+                return reply.code(400).send({
+                    success: false,
+                    message: missingVariables.length === 1
+                        ? '1 variable is missing. Please fix it first.'
+                        : `${missingVariables.length} variables are missing. Please fix them first.`,
+                    missingVariables,
+                    missingCount: missingVariables.length
+                });
+            }
+
+            const workbook = new ExcelJS.Workbook();
+            await workbook.xlsx.readFile(template.originalFilePath);
+
+            workbook.eachSheet((worksheet) => {
+                worksheet.eachRow((row) => {
+                    row.eachCell({ includeEmpty: false }, (cell) => {
+                        if (typeof cell.value === 'string') {
+                            cell.value = renderTemplateContent(cell.value, variableMap);
+                            return;
+                        }
+
+                        if (cell.value && typeof cell.value === 'object' && cell.value.richText) {
+                            cell.value = {
+                                richText: cell.value.richText.map((part) => ({
+                                    ...part,
+                                    text: renderTemplateContent(part.text || '', variableMap)
+                                }))
+                            };
+                            return;
+                        }
+
+                        if (cell.text && typeof cell.text === 'string' && extractTemplateVariables(cell.text).length > 0) {
+                            const nextValue = renderTemplateContent(cell.text, variableMap);
+                            cell.value = nextValue;
+                        }
+                    });
+                });
+            });
+
+            const arrayBuffer = await workbook.xlsx.writeBuffer();
+            const buffer = Buffer.isBuffer(arrayBuffer) ? arrayBuffer : Buffer.from(arrayBuffer);
+            const fileName = `${template.name.replace(/[^a-z0-9_-]+/gi, '_')}_${Date.now()}.xlsx`;
+            reply.header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            reply.header('Content-Disposition', `attachment; filename="${fileName}"`);
+            reply.header('Content-Length', buffer.length);
+            return reply.send(buffer);
         }
         if (template.docType === 'student' && !student) {
             return reply.code(400).send({ success: false, message: 'Student document needs valid student.' });

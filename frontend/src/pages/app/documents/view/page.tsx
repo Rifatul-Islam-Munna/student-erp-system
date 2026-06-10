@@ -31,6 +31,7 @@ import { SettingDocument } from "@/types/setting";
 import { DocumentTemplate } from "@/types/document";
 import { Student } from "@/types/student";
 import { openPdfLayoutPrintWindow, renderPdfSourcePreview, resolvePdfLayoutItems } from "@/utils/pdf-layout";
+import { readXlsxPreview, XlsxPreviewSheet } from "@/utils/xlsx-preview";
 
 const getStatusColor = (status: DocumentTemplate["status"]) => {
   if (status === "active") return "success";
@@ -51,6 +52,7 @@ export default function DocumentView() {
   const [student, setStudent] = useState<Student | null>(null);
   const [settings, setSettings] = useState<SettingDocument | null>(null);
   const [sourceBlob, setSourceBlob] = useState<Blob | null>(null);
+  const [xlsxPreview, setXlsxPreview] = useState<XlsxPreviewSheet | null>(null);
   const [generateError, setGenerateError] = useState("");
   const [generating, setGenerating] = useState(false);
 
@@ -63,13 +65,16 @@ export default function DocumentView() {
         if (response.success && response.data) {
           setDocument(response.data);
           setStudentId(searchParams.get("studentId") || "");
-          if (response.data.documentFormat === "pdf" && response.data._id && response.data.originalFileName) {
-            const [blob, settingsResponse] = await Promise.all([
-              DocumentService.getTemplateSourceBlob(response.data._id),
-              SettingService.getAll(),
-            ]);
+          if ((response.data.documentFormat === "pdf" || response.data.documentFormat === "xlsx") && response.data._id && response.data.originalFileName) {
+            const blob = await DocumentService.getTemplateSourceBlob(response.data._id);
             setSourceBlob(blob);
-            setSettings(settingsResponse.data);
+            if (response.data.documentFormat === "pdf") {
+              const settingsResponse = await SettingService.getAll();
+              setSettings(settingsResponse.data);
+              setXlsxPreview(null);
+            } else {
+              setXlsxPreview(await readXlsxPreview(blob));
+            }
           }
         }
       } catch (error) {
@@ -106,6 +111,29 @@ export default function DocumentView() {
 
   const handleGenerate = async () => {
     if (!document?._id) return;
+    if (document.documentFormat === "xlsx") {
+      if (document.docType === "student" && !studentId.trim()) {
+        setGenerateError("Student ID required for student document");
+        return;
+      }
+      setGenerating(true);
+      setGenerateError("");
+      try {
+        await DocumentService.generateAndDownloadFile(
+          {
+            templateId: document._id,
+            studentId: document.docType === "student" ? studentId.trim() : undefined,
+          },
+          document.name,
+        );
+      } catch (error) {
+        console.error("Failed to generate xlsx document", error);
+        setGenerateError("Failed to generate document");
+      } finally {
+        setGenerating(false);
+      }
+      return;
+    }
     if (document.documentFormat === "pdf") {
       if (!sourceBlob) {
         setGenerateError("PDF source not uploaded yet");
@@ -201,7 +229,7 @@ export default function DocumentView() {
             {t("Edit")}
           </Button>
           <Button variant="surface" color="grey" startIcon={<NiPrinter size="medium" />} onClick={handleGenerate} disabled={generating}>
-            {generating ? t("Preparing...") : t(document.documentFormat === "pdf" ? "Print PDF" : "Generate PDF")}
+            {generating ? t("Preparing...") : t(document.documentFormat === "pdf" ? "Print PDF" : document.documentFormat === "xlsx" ? "Download XLSX" : "Generate PDF")}
           </Button>
         </Box>
       </Box>
@@ -214,7 +242,7 @@ export default function DocumentView() {
               <Box className="flex flex-wrap gap-2">
                 <Chip label={t(document.docType)} color={document.docType === "student" ? "primary" : document.docType === "system" ? "warning" : "default"} variant="outlined" />
                 <Chip label={t(document.status)} color={getStatusColor(document.status)} />
-                <Chip label={t(document.documentFormat === "pdf" ? "PDF Layout Builder" : "Rich Document / PDF")} variant="outlined" />
+                <Chip label={t(document.documentFormat === "pdf" ? "PDF Layout Builder" : document.documentFormat === "xlsx" ? "XLSX Template" : "Rich Document / PDF")} variant="outlined" />
                 <Chip label={document.pageSettings?.preset || "A4"} variant="outlined" />
               </Box>
               <Typography color="text.secondary">{document.description || t("No internal note")}</Typography>
@@ -242,6 +270,8 @@ export default function DocumentView() {
               <Typography variant="body2" color="text.secondary">
                 {document.documentFormat === "pdf"
                   ? t("PDF layout templates open browser print preview with placed variables on top of your uploaded PDF.")
+                  : document.documentFormat === "xlsx"
+                  ? t("XLSX templates download as real XLSX files with variables replaced from student and system data.")
                   : document.docType === "student"
                   ? t("Student template replaces student variables before download.")
                   : t("System and other templates download with current system variables only.")}
@@ -274,6 +304,35 @@ export default function DocumentView() {
                     pageWidthMm={document.pageSettings?.widthMm}
                     pageHeightMm={document.pageSettings?.heightMm}
                   />
+                )}
+              </CardContent>
+            </Card>
+          ) : document.documentFormat === "xlsx" ? (
+            <Card className="rounded-[24px] shadow-sm">
+              <CardContent className="space-y-4">
+                <Alert severity="info">{t("This template uses XLSX preview. Variables stay inside the Excel file and download remains XLSX.")}</Alert>
+                <Typography variant="body2" color="text.secondary">{document.originalFileName || t("No source file uploaded yet")}</Typography>
+                {!xlsxPreview ? (
+                  <Typography variant="body2" color="text.secondary">{t("No XLSX preview available.")}</Typography>
+                ) : (
+                  <>
+                    <Chip label={xlsxPreview.name} size="small" variant="outlined" />
+                    <Box className="overflow-auto rounded-xl border border-divider">
+                      <table className="min-w-full border-collapse text-sm">
+                        <tbody>
+                          {xlsxPreview.rows.map((row, rowIndex) => (
+                            <tr key={`view-xlsx-row-${rowIndex}`}>
+                              {row.map((cell, cellIndex) => (
+                                <td key={`view-xlsx-cell-${rowIndex}-${cellIndex}`} className="border border-slate-200 px-3 py-2 align-top">
+                                  {cell || "\u00A0"}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </Box>
+                  </>
                 )}
               </CardContent>
             </Card>

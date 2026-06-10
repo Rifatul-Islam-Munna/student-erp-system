@@ -134,7 +134,7 @@ export const DocumentService = {
     return fetchApi("/documents/shortcodes");
   },
 
-  generateAndDownloadPdf: async (data: { templateId: string; studentId?: string }, fileName: string) => {
+  generateAndDownloadFile: async (data: { templateId: string; studentId?: string }, fileName: string) => {
     const token = localStorage.getItem("auth_token");
     const apiBase = import.meta.env.VITE_API_URL || "http://localhost:3000/api/v1";
 
@@ -156,6 +156,15 @@ export const DocumentService = {
 
     const blob = await response.blob();
     const { saveAs } = await import("file-saver");
-    saveAs(blob, fileName.endsWith(".pdf") ? fileName : `${fileName}.pdf`);
+    const disposition = response.headers.get("Content-Disposition") || "";
+    const matchedFileName = disposition.match(/filename="([^"]+)"/i)?.[1];
+    const contentType = response.headers.get("Content-Type") || "";
+    const extension = matchedFileName?.split(".").pop()
+      || (contentType.includes("spreadsheetml") ? "xlsx" : "pdf");
+    const normalizedFileName = matchedFileName || (fileName.endsWith(`.${extension}`) ? fileName : `${fileName}.${extension}`);
+    saveAs(blob, normalizedFileName);
   },
+
+  generateAndDownloadPdf: async (data: { templateId: string; studentId?: string }, fileName: string) =>
+    DocumentService.generateAndDownloadFile(data, fileName),
 };
