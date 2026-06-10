@@ -182,7 +182,48 @@ const buildDerivedDocVariables = (payload = {}) => {
         '{{visa_type}}': payload.visaType || '',
         '{{student_type}}': payload.studentType || '',
         '{{source}}': payload.source || '',
-        '{{status}}': payload.status || ''
+        '{{status}}': payload.status || '',
+        // Father details
+        '{{father_name:bd}}': payload.father_name_bd || '',
+        '{{father_dob}}': formatDateValue(payload.father_dob),
+        '{{father_dob:year}}': getDatePart(payload.father_dob, 'year'),
+        '{{father_dob:month}}': getDatePart(payload.father_dob, 'month'),
+        '{{father_dob:day}}': getDatePart(payload.father_dob, 'day'),
+        '{{father_occupation}}': payload.father_occupation || '',
+        '{{father_phone}}': payload.father_phone || '',
+        // Mother details
+        '{{mother_name:bd}}': payload.mother_name_bd || '',
+        '{{mother_occupation}}': payload.mother_occupation || '',
+        // Passport & NID
+        '{{passport_Issuing authority}}': payload.passport_issuing_authority || '',
+        '{{nid_issue:year}}': getDatePart(payload.nid_issue_date, 'year'),
+        '{{nid_issue:month}}': getDatePart(payload.nid_issue_date, 'month'),
+        '{{nid_issue:day}}': getDatePart(payload.nid_issue_date, 'day'),
+        // DOB in words
+        '{{dob:in word in English}}': (() => { if (!payload.dob) return ''; const d = new Date(payload.dob); if (Number.isNaN(d.getTime())) return ''; const months = ['January','February','March','April','May','June','July','August','September','October','November','December']; return `${months[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`; })(),
+        '{{dob:in word in JP}}': (() => { if (!payload.dob) return ''; const d = new Date(payload.dob); if (Number.isNaN(d.getTime())) return ''; return `${d.getUTCFullYear()}年${d.getUTCMonth() + 1}月${d.getUTCDate()}日`; })(),
+        // Sponsor
+        '{{sponsor_name_bd}}': payload.sponsor_name_bd || '',
+        '{{sponsor_personal number}}': payload.sponsor_personal_number || '',
+        // Family members
+        '{{family1_name}}': payload.family1_name || '',
+        '{{family1_dob}}': formatDateValue(payload.family1_dob),
+        '{{family1_occupation}}': payload.family1_occupation || '',
+        '{{family2_name}}': payload.family2_name || '',
+        '{{family2_dob}}': formatDateValue(payload.family2_dob),
+        '{{family2_occupation}}': payload.family2_occupation || '',
+        '{{family3_name}}': payload.family3_name || '',
+        '{{family3_dob}}': formatDateValue(payload.family3_dob),
+        '{{family3_occupation}}': payload.family3_occupation || '',
+        // Work dates (derived from employment array)
+        '{{work_start}}': formatDateValue(work1.startDate),
+        '{{work_start:year}}': getDatePart(work1.startDate, 'year'),
+        '{{work_start:month}}': getDatePart(work1.startDate, 'month'),
+        '{{work_end}}': formatDateValue(work1.endDate),
+        '{{work_end:year}}': getDatePart(work1.endDate, 'year'),
+        '{{work_end:month}}': getDatePart(work1.endDate, 'month'),
+        '{{work2_start}}': formatDateValue(work2.startDate),
+        '{{work2_end}}': formatDateValue(work2.endDate)
     };
 };
 
