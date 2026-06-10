@@ -141,6 +141,21 @@ const calculateAge = (value?: string | Date) => {
   return String(age);
 };
 
+const formatDateJP = (value?: string | Date) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.getUTCFullYear()}年${date.getUTCMonth() + 1}月${date.getUTCDate()}日`;
+};
+
+const formatDateEnWords = (value?: string | Date) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  return `${months[date.getUTCMonth()]} ${date.getUTCDate()}, ${date.getUTCFullYear()}`;
+};
+
 const buildDerivedDocVariables = (values: Partial<Student>) => {
   const nameEn = splitName(values.fullNameEn);
   const nameKatakana = splitName(values.nameKatakana);
@@ -254,6 +269,47 @@ const buildDerivedDocVariables = (values: Partial<Student>) => {
     "{{student_type}}": values.studentType || "",
     "{{source}}": values.source || "",
     "{{status}}": values.status || "",
+    // Father details
+    "{{father_name:bd}}": values.father_name_bd || "",
+    "{{father_dob}}": formatDateValue(values.father_dob),
+    "{{father_dob:year}}": getDatePart(values.father_dob, "year"),
+    "{{father_dob:month}}": getDatePart(values.father_dob, "month"),
+    "{{father_dob:day}}": getDatePart(values.father_dob, "day"),
+    "{{father_occupation}}": values.father_occupation || "",
+    "{{father_phone}}": values.father_phone || "",
+    // Mother details
+    "{{mother_name:bd}}": values.mother_name_bd || "",
+    "{{mother_occupation}}": values.mother_occupation || "",
+    // Passport & NID
+    "{{passport_Issuing authority}}": values.passport_issuing_authority || "",
+    "{{nid_issue:year}}": getDatePart(values.nid_issue_date, "year"),
+    "{{nid_issue:month}}": getDatePart(values.nid_issue_date, "month"),
+    "{{nid_issue:day}}": getDatePart(values.nid_issue_date, "day"),
+    // DOB in words
+    "{{dob:in word in English}}": formatDateEnWords(values.dob),
+    "{{dob:in word in JP}}": formatDateJP(values.dob),
+    // Sponsor
+    "{{sponsor_name_bd}}": values.sponsor_name_bd || "",
+    "{{sponsor_personal number}}": values.sponsor_personal_number || "",
+    // Family members
+    "{{family1_name}}": values.family1_name || "",
+    "{{family1_dob}}": formatDateValue(values.family1_dob),
+    "{{family1_occupation}}": values.family1_occupation || "",
+    "{{family2_name}}": values.family2_name || "",
+    "{{family2_dob}}": formatDateValue(values.family2_dob),
+    "{{family2_occupation}}": values.family2_occupation || "",
+    "{{family3_name}}": values.family3_name || "",
+    "{{family3_dob}}": formatDateValue(values.family3_dob),
+    "{{family3_occupation}}": values.family3_occupation || "",
+    // Work dates (from employment array)
+    "{{work_start}}": formatDateValue(values.employment?.[0]?.startDate),
+    "{{work_start:year}}": getDatePart(values.employment?.[0]?.startDate, "year"),
+    "{{work_start:month}}": getDatePart(values.employment?.[0]?.startDate, "month"),
+    "{{work_end}}": formatDateValue(values.employment?.[0]?.endDate),
+    "{{work_end:year}}": getDatePart(values.employment?.[0]?.endDate, "year"),
+    "{{work_end:month}}": getDatePart(values.employment?.[0]?.endDate, "month"),
+    "{{work2_start}}": formatDateValue(values.employment?.[1]?.startDate),
+    "{{work2_end}}": formatDateValue(values.employment?.[1]?.endDate),
   } as Record<string, string>;
 };
 
@@ -500,6 +556,25 @@ export default function StudentUpsert() {
       mother_phone: "",
       sponsor_name_en: "",
       sponsor_relationship: "",
+      sponsor_name_bd: "",
+      sponsor_personal_number: "",
+      father_name_bd: "",
+      father_dob: undefined,
+      father_occupation: "",
+      father_phone: "",
+      mother_name_bd: "",
+      mother_occupation: "",
+      passport_issuing_authority: "",
+      nid_issue_date: undefined,
+      family1_name: "",
+      family1_dob: undefined,
+      family1_occupation: "",
+      family2_name: "",
+      family2_dob: undefined,
+      family2_occupation: "",
+      family3_name: "",
+      family3_dob: undefined,
+      family3_occupation: "",
       emergencyContact: "",
       emergencyPhone: "",
       permanentAddress: "",
@@ -779,6 +854,25 @@ export default function StudentUpsert() {
       mother_phone: faker.phone.number("01#########"),
       sponsor_name_en: faker.person.fullName(),
       sponsor_relationship: faker.helpers.arrayElement(["Father", "Mother", "Brother", "Uncle"]),
+      sponsor_name_bd: faker.person.fullName(),
+      sponsor_personal_number: faker.phone.number("01#########"),
+      father_name_bd: faker.person.fullName({ sex: "male" }),
+      father_dob: toIsoString(faker.date.birthdate({ min: 40, max: 65, mode: "age" })),
+      father_occupation: faker.person.jobTitle(),
+      father_phone: faker.phone.number("01#########"),
+      mother_name_bd: faker.person.fullName({ sex: "female" }),
+      mother_occupation: faker.person.jobTitle(),
+      passport_issuing_authority: `${faker.location.city()} Passport Office`,
+      nid_issue_date: toIsoString(faker.date.past({ years: 5 })),
+      family1_name: faker.person.fullName(),
+      family1_dob: toIsoString(faker.date.birthdate({ min: 20, max: 70, mode: "age" })),
+      family1_occupation: faker.person.jobTitle(),
+      family2_name: faker.person.fullName(),
+      family2_dob: toIsoString(faker.date.birthdate({ min: 20, max: 70, mode: "age" })),
+      family2_occupation: faker.person.jobTitle(),
+      family3_name: faker.person.fullName(),
+      family3_dob: toIsoString(faker.date.birthdate({ min: 20, max: 70, mode: "age" })),
+      family3_occupation: faker.person.jobTitle(),
       emergencyContact: faker.person.fullName(),
       emergencyPhone: faker.phone.number("01#########"),
       permanentAddress,
@@ -1175,10 +1269,28 @@ export default function StudentUpsert() {
                     <TextField fullWidth id="father_name_en" name="father_name_en" label={t("Father Name (English)")} value={formik.values.father_name_en || ""} onChange={formik.handleChange} />
                   </Grid>
                   <Grid size={{ xs: 12, md: 6 }}>
+                    <TextField fullWidth id="father_name_bd" name="father_name_bd" label={t("Father Name (Bangla)")} value={formik.values.father_name_bd || ""} onChange={formik.handleChange} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <DatePicker label={t("Father Date of Birth")} value={formik.values.father_dob ? dayjs(formik.values.father_dob) : null} onChange={(value) => formik.setFieldValue("father_dob", value?.toISOString() || undefined)} slotProps={{ textField: { fullWidth: true } }} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <TextField fullWidth id="father_occupation" name="father_occupation" label={t("Father Occupation")} value={formik.values.father_occupation || ""} onChange={formik.handleChange} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <TextField fullWidth id="father_phone" name="father_phone" label={t("Father Phone")} value={formik.values.father_phone || ""} onChange={formik.handleChange} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
                     <TextField fullWidth id="mother_name_en" name="mother_name_en" label={t("Mother Name (English)")} value={formik.values.mother_name_en || ""} onChange={formik.handleChange} />
                   </Grid>
                   <Grid size={{ xs: 12, md: 6 }}>
+                    <TextField fullWidth id="mother_name_bd" name="mother_name_bd" label={t("Mother Name (Bangla)")} value={formik.values.mother_name_bd || ""} onChange={formik.handleChange} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
                     <DatePicker label={t("Mother Date of Birth")} value={formik.values.mother_dob ? dayjs(formik.values.mother_dob) : null} onChange={(value) => formik.setFieldValue("mother_dob", value?.toISOString() || undefined)} slotProps={{ textField: { fullWidth: true } }} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <TextField fullWidth id="mother_occupation" name="mother_occupation" label={t("Mother Occupation")} value={formik.values.mother_occupation || ""} onChange={formik.handleChange} />
                   </Grid>
                   <Grid size={{ xs: 12, md: 6 }}>
                     <TextField fullWidth id="mother_phone" name="mother_phone" label={t("Mother Phone")} value={formik.values.mother_phone || ""} onChange={formik.handleChange} />
@@ -1187,12 +1299,47 @@ export default function StudentUpsert() {
                     <TextField fullWidth id="spouseName" name="spouseName" label={t("Spouse Name")} value={formik.values.spouseName || ""} onChange={formik.handleChange} />
                   </Grid>
 
+                  <SectionLabel>{t("Family Members")}</SectionLabel>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <TextField fullWidth id="family1_name" name="family1_name" label={t("Family Member 1 Name")} value={formik.values.family1_name || ""} onChange={formik.handleChange} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <DatePicker label={t("Family Member 1 DOB")} value={formik.values.family1_dob ? dayjs(formik.values.family1_dob) : null} onChange={(value) => formik.setFieldValue("family1_dob", value?.toISOString() || undefined)} slotProps={{ textField: { fullWidth: true } }} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <TextField fullWidth id="family1_occupation" name="family1_occupation" label={t("Family Member 1 Occupation")} value={formik.values.family1_occupation || ""} onChange={formik.handleChange} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <TextField fullWidth id="family2_name" name="family2_name" label={t("Family Member 2 Name")} value={formik.values.family2_name || ""} onChange={formik.handleChange} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <DatePicker label={t("Family Member 2 DOB")} value={formik.values.family2_dob ? dayjs(formik.values.family2_dob) : null} onChange={(value) => formik.setFieldValue("family2_dob", value?.toISOString() || undefined)} slotProps={{ textField: { fullWidth: true } }} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <TextField fullWidth id="family2_occupation" name="family2_occupation" label={t("Family Member 2 Occupation")} value={formik.values.family2_occupation || ""} onChange={formik.handleChange} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <TextField fullWidth id="family3_name" name="family3_name" label={t("Family Member 3 Name")} value={formik.values.family3_name || ""} onChange={formik.handleChange} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <DatePicker label={t("Family Member 3 DOB")} value={formik.values.family3_dob ? dayjs(formik.values.family3_dob) : null} onChange={(value) => formik.setFieldValue("family3_dob", value?.toISOString() || undefined)} slotProps={{ textField: { fullWidth: true } }} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <TextField fullWidth id="family3_occupation" name="family3_occupation" label={t("Family Member 3 Occupation")} value={formik.values.family3_occupation || ""} onChange={formik.handleChange} />
+                  </Grid>
+
                   <SectionLabel>{t("Sponsor Information")}</SectionLabel>
                   <Grid size={{ xs: 12, md: 6 }}>
                     <TextField fullWidth id="sponsor_name_en" name="sponsor_name_en" label={t("Sponsor Name (English)")} value={formik.values.sponsor_name_en || ""} onChange={formik.handleChange} />
                   </Grid>
                   <Grid size={{ xs: 12, md: 6 }}>
                     <TextField fullWidth id="sponsor_relationship" name="sponsor_relationship" label={t("Sponsor Relationship")} value={formik.values.sponsor_relationship || ""} onChange={formik.handleChange} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <TextField fullWidth id="sponsor_name_bd" name="sponsor_name_bd" label={t("Sponsor Name (Bangla)")} value={formik.values.sponsor_name_bd || ""} onChange={formik.handleChange} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <TextField fullWidth id="sponsor_personal_number" name="sponsor_personal_number" label={t("Sponsor Personal Number")} value={formik.values.sponsor_personal_number || ""} onChange={formik.handleChange} />
                   </Grid>
 
                   <SectionLabel>{t("Emergency & Identity")}</SectionLabel>
@@ -1209,6 +1356,9 @@ export default function StudentUpsert() {
                     <TextField fullWidth id="passportNo" name="passportNo" label={t("Passport No")} value={formik.values.passportNo || ""} onChange={formik.handleChange} />
                   </Grid>
                   <Grid size={{ xs: 12, md: 4 }}>
+                    <TextField fullWidth id="passport_issuing_authority" name="passport_issuing_authority" label={t("Passport Issuing Authority")} value={formik.values.passport_issuing_authority || ""} onChange={formik.handleChange} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 4 }}>
                     <DatePicker label={t("Passport Issue Date")} value={formik.values.passportIssueDate ? dayjs(formik.values.passportIssueDate) : null} onChange={(value) => formik.setFieldValue("passportIssueDate", value?.toISOString() || undefined)} slotProps={{ textField: { fullWidth: true } }} />
                   </Grid>
                   <Grid size={{ xs: 12, md: 4 }}>
@@ -1219,6 +1369,9 @@ export default function StudentUpsert() {
                   </Grid>
                   <Grid size={{ xs: 12, md: 4 }}>
                     <DatePicker label={t("Birth Certificate Issue Date")} value={formik.values.bc_date_of_issuance ? dayjs(formik.values.bc_date_of_issuance) : null} onChange={(value) => formik.setFieldValue("bc_date_of_issuance", value?.toISOString() || undefined)} slotProps={{ textField: { fullWidth: true } }} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <DatePicker label={t("NID Issue Date")} value={formik.values.nid_issue_date ? dayjs(formik.values.nid_issue_date) : null} onChange={(value) => formik.setFieldValue("nid_issue_date", value?.toISOString() || undefined)} slotProps={{ textField: { fullWidth: true } }} />
                   </Grid>
                   {renderExtraSection("Family")}
                   {renderExtraSection("Sponsor")}

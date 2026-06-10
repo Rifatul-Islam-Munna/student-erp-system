@@ -51,6 +51,7 @@ export default function AiTemplateCanvas({
 }: Props) {
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ id: string; dx: number; dy: number } | null>(null);
+  const dragPreviewRef = useRef<{ el: HTMLDivElement; startX: number; startY: number } | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState("");
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
@@ -114,27 +115,48 @@ export default function AiTemplateCanvas({
     };
   }, [sourceBlob]);
 
-  const commitMove = (event: globalThis.MouseEvent) => {
-    if (!dragRef.current || !surfaceRef.current || !onItemsChange) return;
-
-    const rect = surfaceRef.current.getBoundingClientRect();
-    const nextX = snap(clamp(((event.clientX - rect.left - dragRef.current.dx) / rect.width) * 100, 0, 96), snapToGrid);
-    const nextY = snap(clamp(((event.clientY - rect.top - dragRef.current.dy) / rect.height) * 100, 0, 98), snapToGrid);
-
-    onItemsChange(items.map((item) => (item.id === dragRef.current?.id ? { ...item, x: nextX, y: nextY } : item)));
-  };
-
   useEffect(() => {
     if (!editable) return;
 
-    const handleMove = (event: globalThis.MouseEvent) => commitMove(event);
+    let rafId = 0;
+
+    const handleMove = (event: globalThis.MouseEvent) => {
+      if (!dragRef.current || !surfaceRef.current) return;
+
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        if (!dragRef.current || !surfaceRef.current) return;
+        const rect = surfaceRef.current.getBoundingClientRect();
+        const nextX = snap(clamp(((event.clientX - rect.left - dragRef.current.dx) / rect.width) * 100, 0, 96), snapToGrid);
+        const nextY = snap(clamp(((event.clientY - rect.top - dragRef.current.dy) / rect.height) * 100, 0, 98), snapToGrid);
+
+        // Direct DOM update for instant visual feedback
+        if (dragPreviewRef.current?.el) {
+          dragPreviewRef.current.el.style.left = `${nextX}%`;
+          dragPreviewRef.current.el.style.top = `${nextY}%`;
+          dragPreviewRef.current.startX = nextX;
+          dragPreviewRef.current.startY = nextY;
+        }
+      });
+    };
+
     const handleUp = () => {
+      cancelAnimationFrame(rafId);
+      // Commit the final position to React state on mouseup only
+      if (dragRef.current && dragPreviewRef.current && onItemsChange) {
+        const finalX = dragPreviewRef.current.startX;
+        const finalY = dragPreviewRef.current.startY;
+        const dragId = dragRef.current.id;
+        onItemsChange(items.map((item) => (item.id === dragId ? { ...item, x: finalX, y: finalY } : item)));
+      }
       dragRef.current = null;
+      dragPreviewRef.current = null;
     };
 
     window.addEventListener("mousemove", handleMove);
     window.addEventListener("mouseup", handleUp);
     return () => {
+      cancelAnimationFrame(rafId);
       window.removeEventListener("mousemove", handleMove);
       window.removeEventListener("mouseup", handleUp);
     };
@@ -147,6 +169,11 @@ export default function AiTemplateCanvas({
       id: item.id,
       dx: event.clientX - rect.left,
       dy: event.clientY - rect.top,
+    };
+    dragPreviewRef.current = {
+      el: event.currentTarget as HTMLDivElement,
+      startX: item.x,
+      startY: item.y,
     };
     setEditingItemId(null);
     onItemSelect?.(item.id);
@@ -278,6 +305,8 @@ export default function AiTemplateCanvas({
                 letterSpacing: `${item.letterSpacing}px`,
                 textAlign: item.textAlign,
                 cursor: editable ? (item.locked ? "not-allowed" : "move") : "default",
+                transition: dragRef.current?.id === item.id ? 'none' : 'left 0.15s ease, top 0.15s ease',
+                willChange: 'left, top',
                 userSelect: item.locked ? "none" : "text",
                 whiteSpace: "pre-wrap",
                 boxShadow: selectedItemId === item.id ? "0 8px 24px rgba(37, 99, 235, 0.18)" : "none",

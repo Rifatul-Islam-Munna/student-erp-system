@@ -319,12 +319,31 @@ export default function DocumentView() {
                     <Chip label={xlsxPreview.name} size="small" variant="outlined" />
                     <Box className="overflow-auto rounded-xl border border-divider">
                       <table className="min-w-full border-collapse text-sm">
+                        {xlsxPreview.colWidths && xlsxPreview.colWidths.length > 0 && (
+                          <colgroup>
+                            {xlsxPreview.colWidths.map((w, i) => (
+                              <col key={`view-col-w-${i}`} style={{ width: w, minWidth: w }} />
+                            ))}
+                          </colgroup>
+                        )}
                         <tbody>
                           {xlsxPreview.rows.map((row, rowIndex) => (
                             <tr key={`view-xlsx-row-${rowIndex}`}>
                               {row.map((cell, cellIndex) => (
-                                <td key={`view-xlsx-cell-${rowIndex}-${cellIndex}`} className="border border-slate-200 px-3 py-2 align-top">
-                                  {cell || "\u00A0"}
+                                <td
+                                  key={`view-xlsx-cell-${rowIndex}-${cellIndex}`}
+                                  className="border border-slate-200 px-3 py-2 align-top"
+                                  style={{
+                                    fontWeight: cell.style?.bold ? 'bold' : undefined,
+                                    fontStyle: cell.style?.italic ? 'italic' : undefined,
+                                    textDecoration: [cell.style?.underline ? 'underline' : '', cell.style?.strike ? 'line-through' : ''].filter(Boolean).join(' ') || undefined,
+                                    color: cell.style?.color || undefined,
+                                    backgroundColor: cell.style?.bgColor || undefined,
+                                    fontSize: cell.style?.fontSize ? `${cell.style.fontSize}pt` : undefined,
+                                    textAlign: (cell.style?.hAlign as React.CSSProperties['textAlign']) || undefined,
+                                  }}
+                                >
+                                  {cell.value || "\u00A0"}
                                 </td>
                               ))}
                             </tr>

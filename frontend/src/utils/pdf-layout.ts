@@ -92,31 +92,6 @@ export const openPdfLayoutPrintWindow = ({
     )
     .join("\n");
 
-  const overlayHtml = items
-    .map(
-      (item) => `
-        <div
-          style="
-            position:absolute;
-            left:${item.x}%;
-            top:${item.y}%;
-            width:${item.width}%;
-            font-family:${escapeHtml(item.fontFamily)};
-            font-size:${item.fontSize}px;
-            font-weight:${item.fontWeight};
-            color:${item.color};
-            background:${item.backgroundColor || "transparent"};
-            line-height:${item.lineHeight};
-            letter-spacing:${item.letterSpacing}px;
-            text-align:${item.textAlign};
-            padding:4px 6px;
-            border-radius:8px;
-            white-space:pre-wrap;
-          "
-        >${escapeHtml(item.value)}</div>
-      `,
-    )
-    .join("");
 
   popup.document.write(`
     <!doctype html>
@@ -124,10 +99,13 @@ export const openPdfLayoutPrintWindow = ({
       <head>
         <meta charset="utf-8" />
         <title>${escapeHtml(title)}</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;600;700&family=Noto+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
         <style>
           @page { size: ${pageWidthMm}mm ${pageHeightMm}mm; margin: 0; }
           ${customFontCss}
-          html, body { margin: 0; padding: 0; background: #dbe4ee; }
+          html, body { margin: 0; padding: 0; background: #dbe4ee; font-family: 'Noto Sans', 'Noto Sans JP', Arial, sans-serif; }
           * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           .sheet-wrap { min-height: 100vh; display: flex; justify-content: center; align-items: flex-start; padding: 24px; }
           .sheet {
@@ -139,10 +117,22 @@ export const openPdfLayoutPrintWindow = ({
             overflow: hidden;
           }
           .bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+          .overlay-item {
+            position: absolute;
+            padding: 4px 6px;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+            text-rendering: geometricPrecision;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+          }
           @media print {
             html, body { background: #fff; }
             .sheet-wrap { padding: 0; min-height: auto; }
             .sheet { box-shadow: none; }
+            .overlay-item { border-radius: 0; padding: 2px 4px; }
           }
         </style>
       </head>
@@ -150,12 +140,33 @@ export const openPdfLayoutPrintWindow = ({
         <div class="sheet-wrap">
           <div class="sheet">
             <img class="bg" src="${backgroundImageUrl}" alt="" />
-            ${overlayHtml}
+            ${items
+              .map(
+                (item) => `
+              <div
+                class="overlay-item"
+                style="
+                  left:${item.x}%;
+                  top:${item.y}%;
+                  width:${item.width}%;
+                  font-family:${escapeHtml(item.fontFamily)};
+                  font-size:${item.fontSize}px;
+                  font-weight:${item.fontWeight};
+                  color:${item.color};
+                  background:${item.backgroundColor || "transparent"};
+                  line-height:${item.lineHeight};
+                  letter-spacing:${item.letterSpacing}px;
+                  text-align:${item.textAlign};
+                "
+              >${escapeHtml(item.value)}</div>
+            `,
+              )
+              .join("")}
           </div>
         </div>
         <script>
           window.addEventListener("load", () => {
-            setTimeout(() => window.print(), 300);
+            setTimeout(() => window.print(), 400);
           });
         </script>
       </body>

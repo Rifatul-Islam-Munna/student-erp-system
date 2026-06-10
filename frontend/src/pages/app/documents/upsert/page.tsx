@@ -86,7 +86,7 @@ import NiTextUnderline from "@/icons/nexture/ni-text-underline";
 import { DocumentService } from "@/services/documentService";
 import { AiTemplateItem, createDefaultAiTemplateLayout, parseAiTemplateLayout, serializeAiTemplateLayout } from "@/types/aiTemplate";
 import { DocumentCustomFont, DocumentFormat, DocumentPageSettings, DocumentTemplate, DocumentVariableDefinition } from "@/types/document";
-import { readXlsxPreview, XlsxPreviewSheet } from "@/utils/xlsx-preview";
+import { readXlsxPreview, XlsxPreviewCell, XlsxPreviewSheet } from "@/utils/xlsx-preview";
 
 const validationSchema = yup.object({
   name: yup.string().required("Title is required"),
@@ -1933,7 +1933,16 @@ export default function DocumentUpsert() {
                               </Alert>
                             </CardContent>
                           </Card>
-                          <Box className="mt-4">
+                        </Box>
+                        <input
+                          ref={fontUploadInputRef}
+                          type="file"
+                          accept={FONT_UPLOAD_ACCEPT}
+                          onChange={handleFontUpload}
+                          style={{ display: "none" }}
+                        />
+                        <Box sx={{ display: 'flex', gap: 3, alignItems: 'flex-start', flexDirection: { xs: 'column', xl: 'row' } }}>
+                          <Box sx={{ flex: 1, minWidth: 0 }}>
                             <AiTemplateCanvas
                               editable
                               items={aiItems}
@@ -1954,16 +1963,7 @@ export default function DocumentUpsert() {
                               onItemsChange={setAiItems}
                             />
                           </Box>
-                        </Box>
-                        <input
-                          ref={fontUploadInputRef}
-                          type="file"
-                          accept={FONT_UPLOAD_ACCEPT}
-                          onChange={handleFontUpload}
-                          style={{ display: "none" }}
-                        />
-                        <Box className="grid gap-4 xl:grid-cols-[380px] xl:justify-end">
-                          <Card variant="outlined" sx={{ borderRadius: 4, position: { xl: "sticky" }, top: { xl: 20 } }}>
+                          <Card variant="outlined" sx={{ borderRadius: 4, position: { xl: 'sticky' }, top: { xl: 20 }, width: { xl: 380 }, flexShrink: 0, maxHeight: { xl: 'calc(100vh - 40px)' }, overflowY: { xl: 'auto' } }}>
                             <CardContent className="space-y-3">
                               <Typography variant="h6">{t("Selected Item Style")}</Typography>
                               {!selectedPdfItem ? (
@@ -2182,12 +2182,31 @@ export default function DocumentUpsert() {
                               <Chip label={xlsxPreview.name} size="small" variant="outlined" />
                               <Box className="overflow-auto rounded-xl border border-divider">
                                 <table className="min-w-full border-collapse text-sm">
+                                  {xlsxPreview.colWidths && xlsxPreview.colWidths.length > 0 && (
+                                    <colgroup>
+                                      {xlsxPreview.colWidths.map((w, i) => (
+                                        <col key={`col-w-${i}`} style={{ width: w, minWidth: w }} />
+                                      ))}
+                                    </colgroup>
+                                  )}
                                   <tbody>
                                     {xlsxPreview.rows.map((row, rowIndex) => (
                                       <tr key={`xlsx-row-${rowIndex}`}>
                                         {row.map((cell, cellIndex) => (
-                                          <td key={`xlsx-cell-${rowIndex}-${cellIndex}`} className="border border-slate-200 px-3 py-2 align-top">
-                                            {cell || "\u00A0"}
+                                          <td
+                                            key={`xlsx-cell-${rowIndex}-${cellIndex}`}
+                                            className="border border-slate-200 px-3 py-2 align-top"
+                                            style={{
+                                              fontWeight: cell.style?.bold ? 'bold' : undefined,
+                                              fontStyle: cell.style?.italic ? 'italic' : undefined,
+                                              textDecoration: [cell.style?.underline ? 'underline' : '', cell.style?.strike ? 'line-through' : ''].filter(Boolean).join(' ') || undefined,
+                                              color: cell.style?.color || undefined,
+                                              backgroundColor: cell.style?.bgColor || undefined,
+                                              fontSize: cell.style?.fontSize ? `${cell.style.fontSize}pt` : undefined,
+                                              textAlign: (cell.style?.hAlign as React.CSSProperties['textAlign']) || undefined,
+                                            }}
+                                          >
+                                            {cell.value || "\u00A0"}
                                           </td>
                                         ))}
                                       </tr>

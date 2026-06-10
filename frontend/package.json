@@ -41,6 +41,7 @@
     "autosuggest-highlight": "3.3.4",
     "dayjs": "1.11.13",
     "ds-markdown": "0.2.2",
+    "exceljs": "^4.4.0",
     "file-saver": "^2.0.5",
     "formik": "2.4.6",
     "i18next": "25.2.1",
