@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import ExcelJS from 'exceljs';
+import { PDFCheckBox, PDFDocument, PDFDropdown, PDFOptionList, PDFRadioGroup, PDFTextField } from 'pdf-lib';
 import puppeteer from 'puppeteer';
 import XLSX from 'xlsx';
 import { fileURLToPath } from 'url';
@@ -130,6 +131,21 @@ const extractWorkbookVariables = async (filePath) => {
     return Array.from(found);
 };
 
+const extractFillablePdfVariables = async (filePath) => {
+    const bytes = fs.readFileSync(filePath);
+    const pdfDoc = await PDFDocument.load(bytes);
+    const form = pdfDoc.getForm();
+
+    return Array.from(
+        new Set(
+            form
+                .getFields()
+                .map((field) => String(field.getName() || '').trim())
+                .filter(Boolean)
+        )
+    );
+};
+
 const normalizePageSettings = (pageSettings = {}) => {
     const preset = pageSettings.preset || 'A4';
     const orientation = pageSettings.orientation === 'landscape' ? 'landscape' : 'portrait';
@@ -196,6 +212,50 @@ const findMissingVariables = (template = {}, variableMap = {}) => {
     return templateVariables.filter((variable) => {
         const value = variableMap[variable];
         return value == null || String(value).trim() === '';
+    });
+};
+
+const isTruthyPdfValue = (value = '') => ['true', 'yes', '1', 'on', 'checked'].includes(String(value).trim().toLowerCase());
+
+const fillPdfFormFields = (form, variableMap = {}) => {
+    form.getFields().forEach((field) => {
+        const fieldName = String(field.getName() || '').trim();
+        if (!fieldName) return;
+
+        const value = variableMap[fieldName];
+        if (value == null) return;
+        const normalizedValue = String(value);
+
+        try {
+            if (field instanceof PDFTextField) {
+                field.setText(normalizedValue);
+                return;
+            }
+
+            if (field instanceof PDFCheckBox) {
+                if (isTruthyPdfValue(normalizedValue)) {
+                    field.check();
+                } else {
+                    field.uncheck();
+                }
+                return;
+            }
+
+            if (field instanceof PDFRadioGroup) {
+                if (normalizedValue.trim()) {
+                    field.select(normalizedValue);
+                }
+                return;
+            }
+
+            if (field instanceof PDFDropdown || field instanceof PDFOptionList) {
+                if (normalizedValue.trim()) {
+                    field.select(normalizedValue);
+                }
+            }
+        } catch (fieldError) {
+            logger.warn({ err: fieldError, fieldName }, 'Failed to fill PDF field');
+        }
     });
 };
 
@@ -556,7 +616,7 @@ export const updateTemplate = async (request, reply) => {
             payload.pageSettings = normalizePageSettings(payload.pageSettings);
         }
 
-        if (payload.templateContent !== undefined) {
+        if (payload.templateContent !== undefined && payload.documentFormat !== 'xlsx' && payload.documentFormat !== 'fillable_pdf') {
             payload.shortcodes = extractTemplateVariables(payload.templateContent || '');
         }
 
@@ -628,6 +688,16 @@ export const uploadTemplateFile = async (request, reply) => {
                 }
                 logger.error({ err: xlsxError, filePath, fileName: data.filename }, 'Failed to parse uploaded XLSX template');
                 return reply.code(400).send({ success: false, message: 'Invalid XLSX file or upload not completed correctly. Please upload a real .xlsx file.' });
+            }
+        } else if (template.documentFormat === 'fillable_pdf') {
+            try {
+                template.shortcodes = await extractFillablePdfVariables(filePath);
+            } catch (pdfError) {
+                if (fs.existsSync(filePath)) {
+                    try { fs.unlinkSync(filePath); } catch (_) { /* ignore */ }
+                }
+                logger.error({ err: pdfError, filePath, fileName: data.filename }, 'Failed to parse uploaded fillable PDF template');
+                return reply.code(400).send({ success: false, message: 'Invalid fillable PDF file. Please upload a real fillable PDF with named form fields.' });
             }
         }
         await template.save();
@@ -732,6 +802,44 @@ export const generateDocument = async (request, reply) => {
             const buffer = Buffer.isBuffer(arrayBuffer) ? arrayBuffer : Buffer.from(arrayBuffer);
             const fileName = `${template.name.replace(/[^a-z0-9_-]+/gi, '_')}_${Date.now()}.xlsx`;
             reply.header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            reply.header('Content-Disposition', `attachment; filename="${fileName}"`);
+            reply.header('Content-Length', buffer.length);
+            return reply.send(buffer);
+        }
+        if (template.documentFormat === 'fillable_pdf') {
+            if (!template.originalFilePath || !fs.existsSync(template.originalFilePath)) {
+                return reply.code(404).send({ success: false, message: 'Fillable PDF source file not found.' });
+            }
+            if (template.docType === 'student' && !student) {
+                return reply.code(400).send({ success: false, message: 'Student document needs valid student.' });
+            }
+
+            const variableMap = {
+                ...buildSystemVariableMap(settingsDoc),
+                ...(student ? buildStudentVariableMap(student) : {})
+            };
+
+            const missingVariables = findMissingVariables(template, variableMap);
+            if (missingVariables.length > 0) {
+                return reply.code(400).send({
+                    success: false,
+                    message: missingVariables.length === 1
+                        ? '1 variable is missing. Please fix it first.'
+                        : `${missingVariables.length} variables are missing. Please fix them first.`,
+                    missingVariables,
+                    missingCount: missingVariables.length
+                });
+            }
+
+            const pdfBytes = fs.readFileSync(template.originalFilePath);
+            const pdfDoc = await PDFDocument.load(pdfBytes);
+            const form = pdfDoc.getForm();
+
+            fillPdfFormFields(form, variableMap);
+
+            const buffer = Buffer.from(await pdfDoc.save());
+            const fileName = `${template.name.replace(/[^a-z0-9_-]+/gi, '_')}_${Date.now()}.pdf`;
+            reply.header('Content-Type', 'application/pdf');
             reply.header('Content-Disposition', `attachment; filename="${fileName}"`);
             reply.header('Content-Length', buffer.length);
             return reply.send(buffer);

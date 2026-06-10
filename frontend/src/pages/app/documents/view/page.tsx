@@ -67,7 +67,7 @@ export default function DocumentView() {
         if (response.success && response.data) {
           setDocument(response.data);
           setStudentId(searchParams.get("studentId") || "");
-          if ((response.data.documentFormat === "pdf" || response.data.documentFormat === "xlsx") && response.data._id && response.data.originalFileName) {
+          if ((response.data.documentFormat === "pdf" || response.data.documentFormat === "xlsx" || response.data.documentFormat === "fillable_pdf") && response.data._id && response.data.originalFileName) {
             setSourcePreviewLoading(true);
             const blob = await DocumentService.getTemplateSourceBlob(response.data._id);
             setSourceBlob(blob);
@@ -75,8 +75,10 @@ export default function DocumentView() {
               const settingsResponse = await SettingService.getAll();
               setSettings(settingsResponse.data);
               setXlsxPreview(null);
-            } else {
+            } else if (response.data.documentFormat === "xlsx") {
               setXlsxPreview(await readXlsxPreview(blob));
+            } else {
+              setXlsxPreview(null);
             }
             setSourcePreviewLoading(false);
           }
@@ -234,7 +236,7 @@ export default function DocumentView() {
             {t("Edit")}
           </Button>
           <Button variant="surface" color="grey" startIcon={<NiPrinter size="medium" />} onClick={handleGenerate} disabled={generating}>
-            {generating ? t("Preparing...") : t(document.documentFormat === "pdf" ? "Print PDF" : document.documentFormat === "xlsx" ? "Download XLSX" : "Generate PDF")}
+            {generating ? t("Preparing...") : t(document.documentFormat === "pdf" ? "Print PDF" : document.documentFormat === "xlsx" ? "Download XLSX" : document.documentFormat === "fillable_pdf" ? "Download Filled PDF" : "Generate PDF")}
           </Button>
         </Box>
       </Box>
@@ -247,7 +249,7 @@ export default function DocumentView() {
               <Box className="flex flex-wrap gap-2">
                 <Chip label={t(document.docType)} color={document.docType === "student" ? "primary" : document.docType === "system" ? "warning" : "default"} variant="outlined" />
                 <Chip label={t(document.status)} color={getStatusColor(document.status)} />
-                <Chip label={t(document.documentFormat === "pdf" ? "PDF Layout Builder" : document.documentFormat === "xlsx" ? "XLSX Template" : "Rich Document / PDF")} variant="outlined" />
+                <Chip label={t(document.documentFormat === "pdf" ? "PDF Layout Builder" : document.documentFormat === "xlsx" ? "XLSX Template" : document.documentFormat === "fillable_pdf" ? "Fillable PDF" : "Rich Document / PDF")} variant="outlined" />
                 <Chip label={document.pageSettings?.preset || "A4"} variant="outlined" />
               </Box>
               <Typography color="text.secondary">{document.description || t("No internal note")}</Typography>
@@ -277,6 +279,8 @@ export default function DocumentView() {
                   ? t("PDF layout templates open browser print preview with placed variables on top of your uploaded PDF.")
                   : document.documentFormat === "xlsx"
                   ? t("XLSX templates download as real XLSX files with variables replaced from student and system data.")
+                  : document.documentFormat === "fillable_pdf"
+                  ? t("Fillable PDF templates download as PDF files with named PDF form fields filled from student and system data.")
                   : document.docType === "student"
                   ? t("Student template replaces student variables before download.")
                   : t("System and other templates download with current system variables only.")}
@@ -330,6 +334,27 @@ export default function DocumentView() {
                     <Chip label={xlsxPreview.name} size="small" variant="outlined" />
                     <XlsxPreviewTable sheet={xlsxPreview} />
                   </>
+                )}
+              </CardContent>
+            </Card>
+          ) : document.documentFormat === "fillable_pdf" ? (
+            <Card className="rounded-[24px] shadow-sm">
+              <CardContent className="space-y-4">
+                <Alert severity="info">{t("This template uses named PDF form fields. Upload source fields like {{name_en}} and generated output stays PDF.")}</Alert>
+                <Typography variant="body2" color="text.secondary">{document.originalFileName || t("No source file uploaded yet")}</Typography>
+                {sourcePreviewLoading ? (
+                  <Box className="rounded-2xl border border-divider bg-slate-50 p-10 text-center">
+                    <Typography variant="body1">{t("Loading PDF preview...")}</Typography>
+                  </Box>
+                ) : sourceBlob ? (
+                  <AiTemplateCanvas
+                    items={[]}
+                    sourceBlob={sourceBlob}
+                    pageWidthMm={document.pageSettings?.widthMm}
+                    pageHeightMm={document.pageSettings?.heightMm}
+                  />
+                ) : (
+                  <Typography variant="body2" color="text.secondary">{t("No PDF preview available.")}</Typography>
                 )}
               </CardContent>
             </Card>

@@ -92,7 +92,7 @@ import { readXlsxPreview, XlsxPreviewCell, XlsxPreviewSheet } from "@/utils/xlsx
 const validationSchema = yup.object({
   name: yup.string().required("Title is required"),
   docType: yup.string().oneOf(["system", "student", "other"]).required("Document type is required"),
-  documentFormat: yup.string().oneOf(["html", "pdf", "xlsx"]).required("Document format is required"),
+  documentFormat: yup.string().oneOf(["html", "pdf", "xlsx", "fillable_pdf"]).required("Document format is required"),
   status: yup.string().oneOf(["draft", "active", "inactive"]).required("Status is required"),
   templateContent: yup.string().when("documentFormat", {
     is: "html",
@@ -111,6 +111,7 @@ const DOCUMENT_FORMATS: { value: DocumentFormat; label: string }[] = [
   { value: "html", label: "Rich Document / PDF" },
   { value: "pdf", label: "PDF Layout Builder" },
   { value: "xlsx", label: "XLSX Template" },
+  { value: "fillable_pdf", label: "Fillable PDF" },
 ];
 
 const DOCUMENT_STATUSES = [
@@ -168,8 +169,13 @@ const preparePayload = (values: Partial<DocumentTemplate>, aiItems: AiTemplateIt
   docType: values.docType || "other",
   documentFormat: values.documentFormat || "html",
   fileType: values.fileType || "",
-  templateContent: values.documentFormat === "pdf" ? serializeAiTemplateLayout({ version: 1, type: "ai-layout", items: aiItems }) : values.templateContent || "",
-  shortcodes: values.documentFormat === "pdf" ? extractAiVariables(aiItems) : values.documentFormat === "xlsx" ? values.shortcodes || [] : extractVariables(values.templateContent || ""),
+  templateContent:
+    values.documentFormat === "pdf"
+      ? serializeAiTemplateLayout({ version: 1, type: "ai-layout", items: aiItems })
+      : values.documentFormat === "xlsx" || values.documentFormat === "fillable_pdf"
+      ? ""
+      : values.templateContent || "",
+  shortcodes: values.documentFormat === "pdf" ? extractAiVariables(aiItems) : values.documentFormat === "xlsx" || values.documentFormat === "fillable_pdf" ? values.shortcodes || [] : extractVariables(values.templateContent || ""),
   description: values.description || "",
   customFonts: Array.isArray(values.customFonts) ? values.customFonts : [],
   status: values.status || "draft",
@@ -948,7 +954,8 @@ export default function DocumentUpsert() {
   const pageSettings = normalizePageSettings(formik.values.pageSettings);
   const isPdfFormat = formik.values.documentFormat === "pdf";
   const isXlsxFormat = formik.values.documentFormat === "xlsx";
-  const isSpecialFormat = isPdfFormat || isXlsxFormat;
+  const isFillablePdfFormat = formik.values.documentFormat === "fillable_pdf";
+  const isSpecialFormat = isPdfFormat || isXlsxFormat || isFillablePdfFormat;
   const usedVariables = extractVariables(formik.values.templateContent || "");
   const currentCanvasZoom = Math.max(0.35, Math.min(1.5, canvasZoom));
   const availableFonts = useMemo(
@@ -1009,6 +1016,20 @@ export default function DocumentUpsert() {
                 setXlsxPreview(preview);
               } catch (sourceError) {
                 console.error("Failed to load XLSX source", sourceError);
+              } finally {
+                setSourcePreviewLoading(false);
+              }
+            }
+          } else if (documentData.documentFormat === "fillable_pdf") {
+            setAiItems(createDefaultAiTemplateLayout().items);
+            setXlsxPreview(null);
+            if ((_id || id) && (documentData.originalFileName || documentData.originalFilePath)) {
+              try {
+                setSourcePreviewLoading(true);
+                const sourceBlob = await DocumentService.getTemplateSourceBlob((_id || id) as string);
+                setPdfSourceBlob(sourceBlob);
+              } catch (sourceError) {
+                console.error("Failed to load fillable PDF source", sourceError);
               } finally {
                 setSourcePreviewLoading(false);
               }
@@ -1799,6 +1820,8 @@ export default function DocumentUpsert() {
                       ? t("PDF layout mode lets you upload a PDF, preview it, place variables visually, and style text before printing.")
                       : isXlsxFormat
                       ? t("XLSX mode uses a real Excel template. Put variables inside the XLSX file, upload it here, preview the first sheet, and student download will stay XLSX.")
+                      : isFillablePdfFormat
+                      ? t("Fillable PDF mode uses a PDF with named form fields like {{name_en}}. Upload it here and student download will stay PDF with fields filled automatically.")
                       : t("Rich Document mode keeps the current visual builder, custom fonts, colors, and PDF output.")}
                   </Alert>
                 </Grid>
@@ -1876,7 +1899,7 @@ export default function DocumentUpsert() {
             <CardContent>
               <Box className="mb-4 flex flex-wrap gap-2">
                 <Chip label={`${pageSettings.preset} / ${pageSettings.orientation}`} size="small" variant="outlined" />
-                <Chip label={t(isPdfFormat ? "PDF Layout Builder" : isXlsxFormat ? "XLSX Template" : "Rich Document / PDF")} size="small" variant="outlined" color={isSpecialFormat ? "info" : "default"} />
+                <Chip label={t(isPdfFormat ? "PDF Layout Builder" : isXlsxFormat ? "XLSX Template" : isFillablePdfFormat ? "Fillable PDF" : "Rich Document / PDF")} size="small" variant="outlined" color={isSpecialFormat ? "info" : "default"} />
                 {!isSpecialFormat && <Chip label={`${usedVariables.length} ${t("variables used")}`} size="small" variant="outlined" color="warning" />}
                 {formik.values.docType === "student" && <Chip label={t("Student variable mode")} size="small" color="primary" variant="outlined" />}
                 {selectedImage && <Chip label={t("Image Selected")} size="small" color="secondary" variant="outlined" onClick={() => setImageDialogOpen(true)} />}
@@ -2206,6 +2229,56 @@ export default function DocumentUpsert() {
                               <Chip label={xlsxPreview.name} size="small" variant="outlined" />
                               <XlsxPreviewTable sheet={xlsxPreview} />
                             </>
+                          )}
+                        </CardContent>
+                      </Card>
+                    </CardContent>
+                  </Card>
+                </Box>
+              ) : isFillablePdfFormat ? (
+                <Box className="space-y-4">
+                  <Alert severity="info">
+                    {t("Use a fillable PDF that already contains named form fields like {{name_en}}. Upload it here. We will read field names as variables and generate a filled PDF for student documents.")}
+                  </Alert>
+                  <Card variant="outlined">
+                    <CardContent className="space-y-4">
+                      <Box className="flex flex-wrap items-center gap-2">
+                        <Button size="small" variant="surface" color="grey" onClick={() => sourceUploadInputRef.current?.click()}>
+                          {t("Choose Fillable PDF")}
+                        </Button>
+                        <Button size="small" variant="surface" color="grey" startIcon={<NiClipboard size="medium" />} onClick={() => setVariableDialogOpen(true)}>
+                          {t("Open Variable Modal")}
+                        </Button>
+                        {isEdit && id && formik.values.originalFileName && (
+                          <Button size="small" variant="surface" color="primary" onClick={() => void DocumentService.downloadTemplateSource(id, formik.values.originalFileName)}>
+                            {t("Download Source")}
+                          </Button>
+                        )}
+                      </Box>
+                      <Typography variant="body2" color="text.secondary">
+                        {pendingSourceFile?.name || formik.values.originalFileName || t("No fillable PDF source file selected yet")}
+                      </Typography>
+                      <input
+                        ref={sourceUploadInputRef}
+                        type="file"
+                        accept="application/pdf,.pdf"
+                        onChange={handleSourceFileSelect}
+                        style={{ display: "none" }}
+                      />
+                      <Card variant="outlined" sx={{ borderRadius: 4 }}>
+                        <CardContent className="space-y-3">
+                          <Typography variant="h6">{t("PDF Preview")}</Typography>
+                          {sourcePreviewLoading ? (
+                            <Typography variant="body2" color="text.secondary">{t("Loading PDF preview...")}</Typography>
+                          ) : !pdfSourceBlob ? (
+                            <Typography variant="body2" color="text.secondary">{t("Upload fillable PDF to preview first page here.")}</Typography>
+                          ) : (
+                            <AiTemplateCanvas
+                              items={[]}
+                              sourceBlob={pdfSourceBlob}
+                              pageWidthMm={pageSettings.widthMm}
+                              pageHeightMm={pageSettings.heightMm}
+                            />
                           )}
                         </CardContent>
                       </Card>

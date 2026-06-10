@@ -1,6 +1,6 @@
 export type DocumentType = "system" | "student" | "other";
 export type DocumentStatus = "draft" | "active" | "inactive";
-export type DocumentFormat = "html" | "pdf" | "xlsx";
+export type DocumentFormat = "html" | "pdf" | "xlsx" | "fillable_pdf";
 export type DocumentPagePreset = "A4" | "A3" | "Letter" | "Legal" | "Custom";
 export type DocumentOrientation = "portrait" | "landscape";
 
