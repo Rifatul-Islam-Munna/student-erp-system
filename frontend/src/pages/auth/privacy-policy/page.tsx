@@ -18,7 +18,7 @@ export default function Page() {
                   Privacy Policy
                 </Typography>
                 <Typography variant="body1" className="text-text-primary">
-                  At Gogo, we take your privacy seriously. This Privacy Policy outlines the types of personal
+                  At Nexus Solution, we take your privacy seriously. This Privacy Policy outlines the types of personal
                   information we collect, how we use it, and the steps we take to safeguard it.
                 </Typography>
               </Box>

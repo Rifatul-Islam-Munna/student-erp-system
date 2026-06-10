@@ -18,9 +18,10 @@ export default function Page() {
                   Terms and Conditions
                 </Typography>
                 <Typography variant="body1" className="text-text-primary">
-                  Welcome to Gogo! These terms and conditions outline the rules and regulations for the use of Gogo.dev.
-                  By accessing this website we assume you accept these terms and conditions. Do not continue to use
-                  Gogo.dev if you do not agree to all of the terms and conditions stated on this page.
+                  Welcome to Nexus Solution! These terms and conditions outline the rules and regulations for the use
+                  of Nexus Solution. By accessing this website we assume you accept these terms and conditions. Do not
+                  continue to use Nexus Solution if you do not agree to all of the terms and conditions stated on this
+                  page.
                 </Typography>
               </Box>
 
@@ -39,8 +40,8 @@ export default function Page() {
                   2. Intellectual Property Rights
                 </Typography>
                 <Typography variant="body1">
-                  Other than the content you own, under these Terms, Gogo and/or its licensors own all the intellectual
-                  property rights and materials contained in this Website.
+                  Other than the content you own, under these Terms, Nexus Solution and/or its licensors own all the
+                  intellectual property rights and materials contained in this Website.
                 </Typography>
                 <br />
 
@@ -48,11 +49,10 @@ export default function Page() {
                   3. Restrictions
                 </Typography>
                 <Typography variant="body1">
-                  You are specifically restricted from all of the following: — Publishing any Website material in any
-                  other media — Selling, sublicensing and/or otherwise commercializing any Website material — Publicly
-                  performing and/or showing any Website material — Using this Website in any way that is or may be
-                  damaging to this Website — Engaging in any data mining, data harvesting, data extracting or any other
-                  similar activity
+                  You are specifically restricted from all of the following: publishing any Website material in any
+                  other media, selling or sublicensing any Website material, publicly performing any Website material,
+                  using this Website in any way that is damaging to this Website, or engaging in data mining, data
+                  harvesting, or data extraction.
                 </Typography>
                 <br />
 
@@ -60,10 +60,9 @@ export default function Page() {
                   4. Your Content
                 </Typography>
                 <Typography variant="body1">
-                  In these Website Standard Terms and Conditions, “Your Content” shall mean any audio, video text,
-                  images or other material you choose to display on this Website. Your Content must be your own and must
-                  not be infringing on any third partys rights. You agree to use this site responsibly. By accessing
-                  this platform, you shall not:
+                  In these Website Standard Terms and Conditions, "Your Content" means any audio, video, text, images
+                  or other material you choose to display on this Website. Your Content must be your own and must not
+                  infringe on any third-party rights. By accessing this platform, you shall not:
                 </Typography>
                 <ul className="list-inside list-disc [&>li]:ms-2 [&>li:first-of-type]:mt-1">
                   <li>Use the service for unlawful purposes</li>
@@ -77,7 +76,7 @@ export default function Page() {
                   5. No warranties
                 </Typography>
                 <Typography variant="body1">
-                  This Website is provided “as is,” with all faults, and Gogo expresses no representations or
+                  This Website is provided "as is," with all faults, and Nexus Solution expresses no representations or
                   warranties.
                 </Typography>
                 <br />
@@ -86,8 +85,8 @@ export default function Page() {
                   6. Limitation of liability
                 </Typography>
                 <Typography variant="body1">
-                  In no event shall Gogo, nor any of its officers, directors and employees, be held liable for anything
-                  arising out of or in any way connected with your use of this Website.
+                  In no event shall Nexus Solution, nor any of its officers, directors and employees, be held liable
+                  for anything arising out of or in any way connected with your use of this Website.
                 </Typography>
                 <br />
 
@@ -95,8 +94,8 @@ export default function Page() {
                   7. Indemnification
                 </Typography>
                 <Typography variant="body1">
-                  You hereby indemnify to the fullest extent Gogo from and against any and all liabilities, costs,
-                  demands, causes of action, damages and expenses.
+                  You hereby indemnify to the fullest extent Nexus Solution from and against any and all liabilities,
+                  costs, demands, causes of action, damages and expenses.
                 </Typography>
                 <br />
 
@@ -104,8 +103,8 @@ export default function Page() {
                   8. Severability
                 </Typography>
                 <Typography variant="body1">
-                  If any provision of these Terms is found to be invalid under any applicable law, such provisions shall
-                  be deleted without affecting the remaining provisions.
+                  If any provision of these Terms is found to be invalid under any applicable law, such provisions
+                  shall be deleted without affecting the remaining provisions.
                 </Typography>
                 <br />
 
@@ -113,7 +112,7 @@ export default function Page() {
                   9. Variation of Terms
                 </Typography>
                 <Typography variant="body1">
-                  Gogo is permitted to revise these Terms at any time as it sees fit.
+                  Nexus Solution is permitted to revise these Terms at any time as it sees fit.
                 </Typography>
                 <br />
 
@@ -130,7 +129,7 @@ export default function Page() {
                   11. Entire Agreement
                 </Typography>
                 <Typography variant="body1">
-                  These Terms constitute the entire agreement between Gogo and you.
+                  These Terms constitute the entire agreement between Nexus Solution and you.
                 </Typography>
                 <br />
 

@@ -291,7 +291,7 @@ export default function Page() {
                   Get Started
                 </Typography>
                 <Typography variant="body1" className="text-text-secondary">
-                  New to Gogo? Please use your email to{" "}
+                  New to Nexus Solution? Please use your email to{" "}
                   <Link to="/auth/sign-up" className="link-primary link-underline-hover">
                     sign up
                   </Link>
