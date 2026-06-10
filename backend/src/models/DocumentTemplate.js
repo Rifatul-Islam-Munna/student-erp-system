@@ -35,6 +35,10 @@ const documentTemplateSchema = new mongoose.Schema({
         type: String,
         default: ''
     },
+    backgroundImageUrl: {
+        type: String,
+        default: ''
+    },
     shortcodes: {
         type: [String],
         default: []

@@ -6,6 +6,7 @@ export const createDocumentTemplateSchema = Joi.object({
     documentFormat: Joi.string().valid('html', 'pdf', 'xlsx', 'fillable_pdf', 'docx').default('html'),
     fileType: Joi.string().allow('', null).trim(),
     templateContent: Joi.string().allow('', null),
+    backgroundImageUrl: Joi.string().allow('', null),
     shortcodes: Joi.array().items(Joi.string()).default([]),
     description: Joi.string().allow('', null).trim(),
     customFonts: Joi.array().items(
@@ -35,6 +36,7 @@ export const updateDocumentTemplateSchema = Joi.object({
     documentFormat: Joi.string().valid('html', 'pdf', 'xlsx', 'fillable_pdf', 'docx').optional(),
     fileType: Joi.string().allow('', null).trim().optional(),
     templateContent: Joi.string().allow('', null).optional(),
+    backgroundImageUrl: Joi.string().allow('', null).optional(),
     shortcodes: Joi.array().items(Joi.string()).optional(),
     description: Joi.string().allow('', null).trim().optional(),
     customFonts: Joi.array().items(

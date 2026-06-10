@@ -229,32 +229,6 @@ export default function DocumentView() {
     }
   };
 
-  const handleGenerateDocxPdf = async () => {
-    if (!document?._id || document.documentFormat !== "docx") return;
-    if (document.docType === "student" && !studentId.trim()) {
-      setGenerateError("Student ID required for student document");
-      return;
-    }
-
-    setGenerating(true);
-    setGenerateError("");
-    try {
-      await DocumentService.generateAndDownloadFile(
-        {
-          templateId: document._id,
-          studentId: document.docType === "student" ? studentId.trim() : undefined,
-          outputFormat: "pdf",
-        },
-        `${document.name}.pdf`,
-      );
-    } catch (error: any) {
-      console.error("Failed to convert docx to pdf", error);
-      setGenerateError(error?.message || "Failed to convert DOCX to PDF");
-    } finally {
-      setGenerating(false);
-    }
-  };
-
   const handleLoadDocxPreview = async () => {
     if (!document?._id || document.documentFormat !== "docx") return;
     if (document.docType === "student" && !studentId.trim()) {
@@ -325,11 +299,6 @@ export default function DocumentView() {
           <Button variant="surface" color="grey" startIcon={<NiPrinter size="medium" />} onClick={handleGenerate} disabled={generating}>
             {generating ? t("Preparing...") : t(document.documentFormat === "pdf" ? "Print PDF" : document.documentFormat === "xlsx" ? "Download XLSX" : document.documentFormat === "fillable_pdf" ? "Download Filled PDF" : document.documentFormat === "docx" ? "Download DOCX" : "Generate PDF")}
           </Button>
-          {document.documentFormat === "docx" && (
-            <Button variant="surface" color="grey" onClick={() => void handleGenerateDocxPdf()} disabled={generating}>
-              {t("Download PDF")}
-            </Button>
-          )}
         </Box>
       </Box>
 
@@ -489,6 +458,10 @@ export default function DocumentView() {
                   sx={{
                     position: "relative",
                     minHeight: "100%",
+                    backgroundImage: document.backgroundImageUrl ? `url(${document.backgroundImageUrl})` : "none",
+                    backgroundSize: "cover",
+                    backgroundPosition: "center",
+                    backgroundRepeat: "no-repeat",
                     "& .document-shape-embed": {
                       pointerEvents: "auto",
                     },

@@ -176,6 +176,7 @@ const preparePayload = (values: Partial<DocumentTemplate>, aiItems: AiTemplateIt
       : values.documentFormat === "xlsx" || values.documentFormat === "fillable_pdf" || values.documentFormat === "docx"
       ? ""
       : values.templateContent || "",
+  backgroundImageUrl: values.backgroundImageUrl || "",
   shortcodes: values.documentFormat === "pdf" ? extractAiVariables(aiItems) : values.documentFormat === "xlsx" || values.documentFormat === "fillable_pdf" || values.documentFormat === "docx" ? values.shortcodes || [] : extractVariables(values.templateContent || ""),
   description: values.description || "",
   customFonts: Array.isArray(values.customFonts) ? values.customFonts : [],
@@ -505,6 +506,7 @@ type ClearableNumberFieldProps = Omit<TextFieldProps, "value" | "onChange" | "ty
 };
 
 const FONT_UPLOAD_ACCEPT = ".ttf,.otf,.woff,.woff2";
+const IMAGE_UPLOAD_ACCEPT = "image/*";
 
 const getAngleFromCenter = (centerX: number, centerY: number, clientX: number, clientY: number) =>
   (Math.atan2(clientY - centerY, clientX - centerX) * 180) / Math.PI;
@@ -609,6 +611,7 @@ export default function DocumentUpsert() {
   const quillRef = useRef<ReactQuill | null>(null);
   const savedSelectionRef = useRef<EditorSelectionRange | null>(null);
   const fontUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const backgroundImageInputRef = useRef<HTMLInputElement | null>(null);
   const sourceUploadInputRef = useRef<HTMLInputElement | null>(null);
   const toolbarHostRef = useRef<HTMLDivElement | null>(null);
   const pageCanvasRef = useRef<HTMLDivElement | null>(null);
@@ -921,6 +924,7 @@ export default function DocumentUpsert() {
       fileType: "",
       originalFileName: "",
       templateContent: "<p></p>",
+      backgroundImageUrl: "",
       shortcodes: [],
       description: "",
       status: "draft",
@@ -1475,6 +1479,19 @@ export default function DocumentUpsert() {
     const normalized = normalizeFontFamilyValue(value) || "Arial";
     setFontFamily(normalized);
     applyInlineFormat("font", normalized);
+  };
+
+  const handleBackgroundImageUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    try {
+      const source = await readFileAsDataUrl(file);
+      formik.setFieldValue("backgroundImageUrl", source);
+    } catch (error) {
+      console.error("Failed to upload background image", error);
+    }
   };
 
   const handleFontUpload = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -2375,6 +2392,13 @@ export default function DocumentUpsert() {
                     onChange={handleFontUpload}
                     style={{ display: "none" }}
                   />
+                  <input
+                    ref={backgroundImageInputRef}
+                    type="file"
+                    accept={IMAGE_UPLOAD_ACCEPT}
+                    onChange={handleBackgroundImageUpload}
+                    style={{ display: "none" }}
+                  />
                   <TextField
                     size="small"
                     select
@@ -2409,6 +2433,14 @@ export default function DocumentUpsert() {
                   <Button size="small" variant="surface" color="grey" startIcon={<NiClipboard size="medium" />} onClick={() => setVariableDialogOpen(true)}>
                     {t("Variables")}
                   </Button>
+                  <Button size="small" variant="surface" color="grey" onClick={() => backgroundImageInputRef.current?.click()}>
+                    {t("Background Image")}
+                  </Button>
+                  {formik.values.backgroundImageUrl && (
+                    <Button size="small" variant="text" color="error" onClick={() => formik.setFieldValue("backgroundImageUrl", "")}>
+                      {t("Clear Background")}
+                    </Button>
+                  )}
                   <Button size="small" variant="surface" color="grey" startIcon={<NiSquare size="medium" />} onClick={() => insertShape("square")}>
                     {t("Shape")}
                   </Button>
@@ -2569,6 +2601,10 @@ export default function DocumentUpsert() {
                         transform: `scale(${currentCanvasZoom})`,
                         transformOrigin: "top left",
                         backgroundColor: "#fff",
+                        backgroundImage: formik.values.backgroundImageUrl ? `url(${formik.values.backgroundImageUrl})` : "none",
+                        backgroundSize: "cover",
+                        backgroundPosition: "center",
+                        backgroundRepeat: "no-repeat",
                         border: "1px solid",
                         borderColor: "divider",
                         borderRadius: "12px",
@@ -2579,7 +2615,7 @@ export default function DocumentUpsert() {
                         event.preventDefault();
                         const variable = event.dataTransfer.getData("text/plain");
                         if (variable) {
-                          void insertVariable(variable);
+                          void copyVariable(variable);
                         }
                       }}
                       onDragOver={(event) => event.preventDefault()}
@@ -2892,7 +2928,7 @@ export default function DocumentUpsert() {
                         key={item.templateVariable}
                         label={item.templateVariable}
                         draggable
-                        onClick={() => void (isPdfFormat ? handlePdfVariableClick(item.templateVariable) : isXlsxFormat ? copyVariable(item.templateVariable) : insertVariable(item.templateVariable))}
+                        onClick={() => void (isPdfFormat ? handlePdfVariableClick(item.templateVariable) : copyVariable(item.templateVariable))}
                         onDelete={() => void copyVariable(item.templateVariable)}
                         onDragStart={(event) => event.dataTransfer.setData("text/plain", item.templateVariable)}
                         deleteIcon={<NiClipboard size="small" />}

@@ -34,6 +34,7 @@ export interface DocumentTemplate {
   docType: DocumentType;
   documentFormat: DocumentFormat;
   templateContent: string;
+  backgroundImageUrl?: string;
   shortcodes: string[];
   description?: string;
   fileType?: string;

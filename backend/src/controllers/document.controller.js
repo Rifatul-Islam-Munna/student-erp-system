@@ -1,7 +1,5 @@
 import crypto from 'crypto';
-import { execFile } from 'child_process';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import Docxtemplater from 'docxtemplater';
 import ExcelJS from 'exceljs';
@@ -24,11 +22,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const UPLOAD_DIR = path.join(__dirname, '../../uploads/templates');
 const GENERATED_DIR = path.join(__dirname, '../../uploads/generated');
-const KNOWN_SOFFICE_PATHS = [
-    process.env.SOFFICE_PATH,
-    'C:\\Program Files\\LibreOffice\\program\\soffice.exe',
-    'C:\\Program Files (x86)\\LibreOffice\\program\\soffice.exe'
-].filter(Boolean);
 
 const PAGE_PRESETS = {
     A4: { widthMm: 210, heightMm: 297 },
@@ -367,6 +360,14 @@ const buildPrintHtml = ({ template, content, title }) => {
     const pagePaddingCss = `${settings.marginTopMm}mm ${settings.marginRightMm}mm ${settings.marginBottomMm}mm ${settings.marginLeftMm}mm`;
     const customFontCss = buildCustomFontCss(template);
     const htmlLang = detectDocumentLanguage(content);
+    const backgroundImageCss = template?.backgroundImageUrl
+        ? `
+        background-image: url("${escapeHtml(template.backgroundImageUrl)}");
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+      `
+        : '';
 
     return `<!doctype html>
 <html lang="${htmlLang}">
@@ -422,6 +423,7 @@ const buildPrintHtml = ({ template, content, title }) => {
         background: #ffffff;
         padding: ${pagePaddingCss};
         box-shadow: 0 24px 70px rgba(16, 24, 40, 0.16);
+        ${backgroundImageCss}
       }
 
       .page * {
@@ -593,44 +595,6 @@ const buildPrintHtml = ({ template, content, title }) => {
 </html>`;
 };
 
-const findSofficePath = () => KNOWN_SOFFICE_PATHS.find((candidate) => candidate && fs.existsSync(candidate)) || null;
-
-const convertDocxBufferToPdf = async (buffer, baseName = 'document') => {
-    const sofficePath = findSofficePath();
-    if (!sofficePath) {
-        const error = new Error('DOCX to PDF conversion is not available because LibreOffice is not installed on server.');
-        error.code = 'SOFFICE_MISSING';
-        throw error;
-    }
-
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agencybook-docx-'));
-    const inputPath = path.join(tempDir, `${baseName}.docx`);
-    const outputPath = path.join(tempDir, `${baseName}.pdf`);
-
-    fs.writeFileSync(inputPath, buffer);
-
-    try {
-        await new Promise((resolve, reject) => {
-            execFile(
-                sofficePath,
-                ['--headless', '--convert-to', 'pdf', '--outdir', tempDir, inputPath],
-                { windowsHide: true, timeout: 120000 },
-                (error) => {
-                    if (error) reject(error);
-                    else resolve();
-                }
-            );
-        });
-
-        if (!fs.existsSync(outputPath)) {
-            throw new Error('LibreOffice did not produce PDF output.');
-        }
-
-        return fs.readFileSync(outputPath);
-    } finally {
-        try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch (_) { /* ignore */ }
-    }
-};
 
 const serializeTemplate = (template) => {
     const record = typeof template?.toObject === 'function' ? template.toObject() : template;
@@ -1015,21 +979,10 @@ export const generateDocument = async (request, reply) => {
             const safeBaseName = `${template.name.replace(/[^a-z0-9_-]+/gi, '_')}_${Date.now()}`;
 
             if (outputFormat === 'pdf') {
-                try {
-                    const pdfBuffer = await convertDocxBufferToPdf(buffer, safeBaseName);
-                    reply.header('Content-Type', 'application/pdf');
-                    reply.header('Content-Disposition', `attachment; filename="${safeBaseName}.pdf"`);
-                    reply.header('Content-Length', pdfBuffer.length);
-                    return reply.send(pdfBuffer);
-                } catch (conversionError) {
-                    logger.error(conversionError);
-                    return reply.code(501).send({
-                        success: false,
-                        message: conversionError.code === 'SOFFICE_MISSING'
-                            ? 'DOCX to PDF conversion is not available on server yet. Install LibreOffice first.'
-                            : 'Failed to convert DOCX to PDF.'
-                    });
-                }
+                return reply.code(400).send({
+                    success: false,
+                    message: 'DOCX to PDF is not supported without a system document converter. DOCX download only.'
+                });
             }
 
             reply.header('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
