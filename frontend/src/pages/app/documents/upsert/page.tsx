@@ -27,6 +27,7 @@ import {
   IconButton,
   InputAdornment,
   MenuItem,
+  Slider,
   Switch,
   TextField,
   Typography,
@@ -586,6 +587,11 @@ export default function DocumentUpsert() {
   const [pdfSourceBlob, setPdfSourceBlob] = useState<Blob | null>(null);
   const [aiItems, setAiItems] = useState<AiTemplateItem[]>([]);
   const [selectedAiItemId, setSelectedAiItemId] = useState<string | null>(null);
+  const [pdfCanvasZoom, setPdfCanvasZoom] = useState(1);
+  const [pdfShowGrid, setPdfShowGrid] = useState(true);
+  const [pdfShowGuides, setPdfShowGuides] = useState(true);
+  const [pdfShowRulers, setPdfShowRulers] = useState(true);
+  const [pdfSnapToGrid, setPdfSnapToGrid] = useState(true);
   const [canvasZoom, setCanvasZoom] = useState(1);
   const [fitZoom, setFitZoom] = useState(1);
   const quillRef = useRef<ReactQuill | null>(null);
@@ -1356,11 +1362,16 @@ export default function DocumentUpsert() {
       value: variable,
       x: 10,
       y: 10 + aiItems.length * 5,
+      width: 28,
       fontFamily,
       fontSize: Math.max(8, Number(fontSizePx) || 16),
       color: "#111827",
       backgroundColor: "transparent",
       fontWeight: 600,
+      lineHeight: 1.3,
+      letterSpacing: 0,
+      textAlign: "left",
+      locked: false,
     };
     setAiItems((current) => [...current, nextItem]);
     setSelectedAiItemId(nextItem.id);
@@ -1373,11 +1384,16 @@ export default function DocumentUpsert() {
       value: "Custom Text",
       x: 12,
       y: 14 + aiItems.length * 5,
+      width: 28,
       fontFamily,
       fontSize: Math.max(8, Number(fontSizePx) || 16),
       color: "#111827",
       backgroundColor: "transparent",
       fontWeight: 500,
+      lineHeight: 1.3,
+      letterSpacing: 0,
+      textAlign: "left",
+      locked: false,
     };
     setAiItems((current) => [...current, nextItem]);
     setSelectedAiItemId(nextItem.id);
@@ -1869,6 +1885,15 @@ export default function DocumentUpsert() {
                               sourceBlob={pdfSourceBlob}
                               pageWidthMm={pageSettings.widthMm}
                               pageHeightMm={pageSettings.heightMm}
+                              marginTopMm={pageSettings.marginTopMm}
+                              marginRightMm={pageSettings.marginRightMm}
+                              marginBottomMm={pageSettings.marginBottomMm}
+                              marginLeftMm={pageSettings.marginLeftMm}
+                              zoom={pdfCanvasZoom}
+                              showGrid={pdfShowGrid}
+                              showGuides={pdfShowGuides}
+                              showRulers={pdfShowRulers}
+                              snapToGrid={pdfSnapToGrid}
                               onItemSelect={setSelectedAiItemId}
                               onItemsChange={setAiItems}
                             />
@@ -1881,16 +1906,34 @@ export default function DocumentUpsert() {
                           onChange={handleFontUpload}
                           style={{ display: "none" }}
                         />
-                        <Box className="grid gap-4 xl:grid-cols-2">
+                        <Box className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px] xl:items-start">
                           <Card variant="outlined" sx={{ borderRadius: 4 }}>
                             <CardContent className="space-y-3">
-                              <Typography variant="h6">{t("How It Works")}</Typography>
+                              <Typography variant="h6">{t("Precision Tools")}</Typography>
+                              <Box className="px-2">
+                                <Typography variant="body2" className="mb-2">{t("Zoom")}: {Math.round(pdfCanvasZoom * 100)}%</Typography>
+                                <Slider
+                                  value={Math.round(pdfCanvasZoom * 100)}
+                                  min={50}
+                                  max={250}
+                                  step={5}
+                                  onChange={(_event, value) => setPdfCanvasZoom((Array.isArray(value) ? value[0] : value) / 100)}
+                                  valueLabelDisplay="auto"
+                                />
+                              </Box>
+                              <FormControlLabel control={<Switch checked={pdfShowGrid} onChange={(event) => setPdfShowGrid(event.target.checked)} />} label={t("Show Grid")} />
+                              <FormControlLabel control={<Switch checked={pdfShowGuides} onChange={(event) => setPdfShowGuides(event.target.checked)} />} label={t("Show Print Guides")} />
+                              <FormControlLabel control={<Switch checked={pdfShowRulers} onChange={(event) => setPdfShowRulers(event.target.checked)} />} label={t("Show Rulers")} />
+                              <FormControlLabel control={<Switch checked={pdfSnapToGrid} onChange={(event) => setPdfSnapToGrid(event.target.checked)} />} label={t("Snap To Grid")} />
                               <Typography variant="body2" color="text.secondary">
-                                {t("1. Open variable modal to copy variables. 2. Add a text box. 3. Paste variable or write text. 4. Drag on PDF. 5. Style with font, hex color, size, and background.")}
+                                {t("Uploaded custom fonts are embedded as data URLs, so print preview uses the same uploaded font source.")}
                               </Typography>
+                              <Alert severity="success">
+                                {t("Green guide box is print-safe area based on current page margins. Use zoom plus X/Y for pixel-perfect placement.")}
+                              </Alert>
                             </CardContent>
                           </Card>
-                          <Card variant="outlined" sx={{ borderRadius: 4 }}>
+                          <Card variant="outlined" sx={{ borderRadius: 4, position: { xl: "sticky" }, top: { xl: 20 } }}>
                             <CardContent className="space-y-3">
                               <Typography variant="h6">{t("Selected Item Style")}</Typography>
                               {!selectedPdfItem ? (
@@ -1905,7 +1948,43 @@ export default function DocumentUpsert() {
                                     label={t("Text / Variable")}
                                     value={selectedPdfItem.value}
                                     onChange={(event) => updateSelectedPdfItem({ value: event.target.value })}
+                                    helperText={t("Double click item on canvas for direct inline editing too.")}
                                   />
+                                  <Grid container spacing={2}>
+                                    <Grid size={{ xs: 12, md: 4 }}>
+                                      <ClearableNumberField
+                                        fullWidth
+                                        size="small"
+                                        label={t("X %")}
+                                        value={selectedPdfItem.x}
+                                        fallbackValue={10}
+                                        normalize={(value) => Math.max(0, Math.min(96, value))}
+                                        onCommit={(value) => updateSelectedPdfItem({ x: value })}
+                                      />
+                                    </Grid>
+                                    <Grid size={{ xs: 12, md: 4 }}>
+                                      <ClearableNumberField
+                                        fullWidth
+                                        size="small"
+                                        label={t("Y %")}
+                                        value={selectedPdfItem.y}
+                                        fallbackValue={10}
+                                        normalize={(value) => Math.max(0, Math.min(98, value))}
+                                        onCommit={(value) => updateSelectedPdfItem({ y: value })}
+                                      />
+                                    </Grid>
+                                    <Grid size={{ xs: 12, md: 4 }}>
+                                      <ClearableNumberField
+                                        fullWidth
+                                        size="small"
+                                        label={t("Width %")}
+                                        value={selectedPdfItem.width}
+                                        fallbackValue={24}
+                                        normalize={(value) => Math.max(8, Math.min(100, value))}
+                                        onCommit={(value) => updateSelectedPdfItem({ width: value })}
+                                      />
+                                    </Grid>
+                                  </Grid>
                                   <TextField
                                     fullWidth
                                     size="small"
@@ -1929,6 +2008,44 @@ export default function DocumentUpsert() {
                                     normalize={(value) => Math.max(8, value)}
                                     onCommit={(value) => updateSelectedPdfItem({ fontSize: value })}
                                   />
+                                  <Grid container spacing={2}>
+                                    <Grid size={{ xs: 12, md: 4 }}>
+                                      <ClearableNumberField
+                                        fullWidth
+                                        size="small"
+                                        label={t("Line Height")}
+                                        value={selectedPdfItem.lineHeight}
+                                        fallbackValue={1.3}
+                                        normalize={(value) => Math.max(0.8, Math.min(3, Number(value.toFixed(2))))}
+                                        onCommit={(value) => updateSelectedPdfItem({ lineHeight: value })}
+                                      />
+                                    </Grid>
+                                    <Grid size={{ xs: 12, md: 4 }}>
+                                      <ClearableNumberField
+                                        fullWidth
+                                        size="small"
+                                        label={t("Letter Spacing")}
+                                        value={selectedPdfItem.letterSpacing}
+                                        fallbackValue={0}
+                                        normalize={(value) => Math.max(-4, Math.min(20, value))}
+                                        onCommit={(value) => updateSelectedPdfItem({ letterSpacing: value })}
+                                      />
+                                    </Grid>
+                                    <Grid size={{ xs: 12, md: 4 }}>
+                                      <TextField
+                                        fullWidth
+                                        size="small"
+                                        select
+                                        label={t("Align")}
+                                        value={selectedPdfItem.textAlign}
+                                        onChange={(event) => updateSelectedPdfItem({ textAlign: event.target.value as AiTemplateItem["textAlign"] })}
+                                      >
+                                        <MenuItem value="left">{t("Left")}</MenuItem>
+                                        <MenuItem value="center">{t("Center")}</MenuItem>
+                                        <MenuItem value="right">{t("Right")}</MenuItem>
+                                      </TextField>
+                                    </Grid>
+                                  </Grid>
                                   <TextField
                                     fullWidth
                                     size="small"
@@ -1942,10 +2059,26 @@ export default function DocumentUpsert() {
                                   <TextField
                                     fullWidth
                                     size="small"
+                                    type="color"
+                                    label={t("Pick Text Color")}
+                                    value={selectedPdfItem.color}
+                                    onChange={(event) => updateSelectedPdfItem({ color: event.target.value })}
+                                  />
+                                  <TextField
+                                    fullWidth
+                                    size="small"
                                     label={t("Background Hex")}
                                     value={selectedPdfItem.backgroundColor === "transparent" ? "" : selectedPdfItem.backgroundColor}
                                     onChange={(event) => updateSelectedPdfItem({ backgroundColor: event.target.value || "transparent" })}
                                     placeholder="#FFFFFF or empty"
+                                  />
+                                  <TextField
+                                    fullWidth
+                                    size="small"
+                                    type="color"
+                                    label={t("Pick Background Color")}
+                                    value={selectedPdfItem.backgroundColor === "transparent" ? "#ffffff" : selectedPdfItem.backgroundColor}
+                                    onChange={(event) => updateSelectedPdfItem({ backgroundColor: event.target.value })}
                                   />
                                   <ClearableNumberField
                                     fullWidth
@@ -1955,6 +2088,10 @@ export default function DocumentUpsert() {
                                     fallbackValue={600}
                                     normalize={(value) => Math.max(300, Math.min(800, Math.round(value)))}
                                     onCommit={(value) => updateSelectedPdfItem({ fontWeight: value })}
+                                  />
+                                  <FormControlLabel
+                                    control={<Switch checked={selectedPdfItem.locked} onChange={(event) => updateSelectedPdfItem({ locked: event.target.checked })} />}
+                                    label={t("Lock Element")}
                                   />
                                   <Button fullWidth size="small" color="error" variant="text" startIcon={<NiBinEmpty size="small" />} onClick={removeSelectedPdfItem}>
                                     {t("Remove Selected")}
@@ -1971,31 +2108,6 @@ export default function DocumentUpsert() {
                           onChange={handleSourceFileSelect}
                           style={{ display: "none" }}
                         />
-                      </Box>
-                    </CardContent>
-                  </Card>
-                  <Card variant="outlined">
-                    <CardContent className="space-y-3">
-                      <Box className="flex items-center justify-between gap-2">
-                        <Typography variant="h6">{t("Quick Copy Variables")}</Typography>
-                        <Button size="small" variant="surface" color="grey" startIcon={<NiClipboard size="medium" />} onClick={() => setVariableDialogOpen(true)}>
-                          {t("Open Variable Modal")}
-                        </Button>
-                      </Box>
-                      <Typography variant="body2" color="text.secondary">
-                        {t("Click variable to auto add it on PDF and also copy it. Then drag it anywhere you want.")}
-                      </Typography>
-                      <Box className="flex flex-wrap gap-2">
-                        {aiAvailableVariables.map((item) => (
-                          <Chip
-                            key={item.templateVariable}
-                            label={item.templateVariable}
-                            variant="outlined"
-                            onClick={() => void handlePdfVariableClick(item.templateVariable)}
-                            onDelete={() => void copyVariable(item.templateVariable)}
-                            deleteIcon={<NiClipboard size="small" />}
-                          />
-                        ))}
                       </Box>
                     </CardContent>
                   </Card>

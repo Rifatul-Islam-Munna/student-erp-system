@@ -100,14 +100,18 @@ export const openPdfLayoutPrintWindow = ({
             position:absolute;
             left:${item.x}%;
             top:${item.y}%;
+            width:${item.width}%;
             font-family:${escapeHtml(item.fontFamily)};
             font-size:${item.fontSize}px;
             font-weight:${item.fontWeight};
             color:${item.color};
             background:${item.backgroundColor || "transparent"};
+            line-height:${item.lineHeight};
+            letter-spacing:${item.letterSpacing}px;
+            text-align:${item.textAlign};
             padding:4px 6px;
             border-radius:8px;
-            white-space:nowrap;
+            white-space:pre-wrap;
           "
         >${escapeHtml(item.value)}</div>
       `,
