@@ -12,12 +12,18 @@ const settingSeeder = async () => {
                 maintenance_mode: false,
                 academic_year: '2025-2026'
             },
-            counselors: ['Admin', 'Manager'],
-            visatypes: ['Study', 'Tourist', 'Work'],
-            agents: ['Global Agency', 'Local Partner'],
+            visatypes: [
+                { name: 'Study', slug: 'study' },
+                { name: 'Tourist', slug: 'tourist' },
+                { name: 'Work', slug: 'work' }
+            ],
             visiting_sources: ['Facebook', 'Referral', 'Walk-in'],
             edu_degrees: ['SSC', 'HSC', 'Bachelor', 'Masters'],
-            exam_types: ['JLPT', 'NAT-TEST', 'IELTS'],
+            exam_types: [
+                { name: 'JLPT', slug: 'jlpt' },
+                { name: 'NAT-TEST', slug: 'nat-test' },
+                { name: 'IELTS', slug: 'ielts' }
+            ],
             countries: [
                 { name: 'Japan', logoUrl: 'https://flagcdn.com/jp.svg' },
                 { name: 'South Korea', logoUrl: 'https://flagcdn.com/kr.svg' }
