@@ -1900,6 +1900,9 @@ export default function DocumentUpsert() {
                             <Button size="small" variant="surface" color="grey" onClick={() => sourceUploadInputRef.current?.click()}>
                               {t("Choose PDF")}
                             </Button>
+                            <Button size="small" variant="surface" color="grey" startIcon={<NiKnobs size="medium" />} onClick={() => setPaperDialogOpen(true)}>
+                              {t("Paper Setup")}
+                            </Button>
                             <Button size="small" variant="surface" color="grey" startIcon={<NiClipboard size="medium" />} onClick={() => setVariableDialogOpen(true)}>
                               {t("Open Variable Modal")}
                             </Button>
@@ -2168,6 +2171,9 @@ export default function DocumentUpsert() {
                       <Box className="flex flex-wrap items-center gap-2">
                         <Button size="small" variant="surface" color="grey" onClick={() => sourceUploadInputRef.current?.click()}>
                           {t("Choose XLSX")}
+                        </Button>
+                        <Button size="small" variant="surface" color="grey" startIcon={<NiKnobs size="medium" />} onClick={() => setPaperDialogOpen(true)}>
+                          {t("Paper Setup")}
                         </Button>
                         <Button size="small" variant="surface" color="grey" startIcon={<NiClipboard size="medium" />} onClick={() => setVariableDialogOpen(true)}>
                           {t("Open Variable Modal")}
@@ -2687,16 +2693,19 @@ export default function DocumentUpsert() {
                 ))}
               </TextField>
             </Grid>
-            {pageSettings.preset === "Custom" && (
-              <>
-                <Grid size={{ xs: 12, md: 6 }}>
-                  <ClearableNumberField fullWidth label={t("Width (mm)")} value={pageSettings.widthMm} fallbackValue={pageSettings.widthMm} normalize={(value) => Math.max(1, value)} onCommit={(value) => updatePageField("widthMm", String(value))} />
-                </Grid>
-                <Grid size={{ xs: 12, md: 6 }}>
-                  <ClearableNumberField fullWidth label={t("Height (mm)")} value={pageSettings.heightMm} fallbackValue={pageSettings.heightMm} normalize={(value) => Math.max(1, value)} onCommit={(value) => updatePageField("heightMm", String(value))} />
-                </Grid>
-              </>
+            {pageSettings.preset !== "Custom" && (
+              <Grid size={12}>
+                <Alert severity="info">
+                  {t("Choose Custom to set your own width and height, or just edit width/height below and it will switch to Custom automatically.")}
+                </Alert>
+              </Grid>
             )}
+            <Grid size={{ xs: 12, md: 6 }}>
+              <ClearableNumberField fullWidth label={t("Width (mm)")} value={pageSettings.widthMm} fallbackValue={pageSettings.widthMm} normalize={(value) => Math.max(1, value)} onCommit={(value) => updatePageField("widthMm", String(value))} />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <ClearableNumberField fullWidth label={t("Height (mm)")} value={pageSettings.heightMm} fallbackValue={pageSettings.heightMm} normalize={(value) => Math.max(1, value)} onCommit={(value) => updatePageField("heightMm", String(value))} />
+            </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
               <ClearableNumberField fullWidth label={t("Top Margin")} value={pageSettings.marginTopMm} fallbackValue={pageSettings.marginTopMm} normalize={(value) => Math.max(0, value)} onCommit={(value) => updatePageField("marginTopMm", String(value))} />
             </Grid>
