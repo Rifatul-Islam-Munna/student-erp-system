@@ -100,9 +100,15 @@ export const leftMenuItems: MenuItem[] = [
     description: "menu-Communication-description",
     children: [
       { id: "messages", label: "menu-messages", icon: "NiMessages", href: "/messages" },
-      { id: "documents", label: "menu-documents", icon: "NiFolder", href: "/documents" },
       { id: "events", label: "menu-events", icon: "NiCalendar", href: "/events" },
     ],
+  },
+  {
+    id: "Documents",
+    icon: "NiFolder",
+    label: "menu-documents",
+    href: "/documents",
+    description: "menu-documents-description",
   },
   {
     id: "System",

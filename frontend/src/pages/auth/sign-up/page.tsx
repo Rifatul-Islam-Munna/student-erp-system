@@ -173,6 +173,7 @@ export default function Page() {
                     setSubmitted(true);
                     formik.handleSubmit(event);
                   }}
+                  autoComplete="on"
                   className="flex flex-col"
                 >
                   <FormControl className="outlined" variant="standard" size="small">
@@ -199,6 +200,7 @@ export default function Page() {
                       id="email"
                       name="email"
                       placeholder=""
+                      autoComplete="email"
                       value={formik.values.email}
                       onChange={formik.handleChange}
                       onBlur={formik.handleBlur}
@@ -216,6 +218,7 @@ export default function Page() {
                       id="company"
                       name="company"
                       placeholder=""
+                      autoComplete="organization"
                       value={formik.values.company}
                       onChange={formik.handleChange}
                       onBlur={formik.handleBlur}
@@ -233,7 +236,7 @@ export default function Page() {
                       id="password"
                       name="password"
                       placeholder=""
-                      autoComplete="off"
+                      autoComplete="new-password"
                       value={formik.values.password}
                       onChange={formik.handleChange}
                       onBlur={formik.handleBlur}

@@ -519,7 +519,7 @@ export default function StudentUpsert() {
   const { enqueueSnackbar } = useSnackbar();
   const { role, id } = useParams();
   const isEdit = Boolean(id);
-  const isDevCreate = import.meta.env.DEV && !isEdit;
+  const isCreateMode = !isEdit;
 
   const [tabValue, setTabValue] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -641,9 +641,7 @@ export default function StudentUpsert() {
           await StudentService.updateStudent(id, payload);
         } else {
           await StudentService.createStudent(payload);
-          if (import.meta.env.DEV) {
-            window.localStorage.removeItem(DEV_AUTOFILL_STORAGE_KEY);
-          }
+          window.localStorage.removeItem(DEV_AUTOFILL_STORAGE_KEY);
         }
         navigate(`/${role}/students`);
       } catch (error) {
@@ -738,7 +736,7 @@ export default function StudentUpsert() {
   }, [isEdit, id]);
 
   useEffect(() => {
-    if (!isDevCreate) return;
+    if (!isCreateMode) return;
 
     try {
       const savedValues = window.localStorage.getItem(DEV_AUTOFILL_STORAGE_KEY);
@@ -752,7 +750,7 @@ export default function StudentUpsert() {
       console.error("Failed to restore dev autofill draft", error);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDevCreate]);
+  }, [isCreateMode]);
 
   const addEmployment = () => {
     const employment = formik.values.employment || [];
@@ -780,7 +778,7 @@ export default function StudentUpsert() {
   };
 
   const autofillDevStudent = async () => {
-    if (!isDevCreate) return;
+    if (!isCreateMode) return;
 
     const { faker } = await import("@faker-js/faker");
     const gender = faker.helpers.arrayElement<Student["gender"]>(["male", "female", "other"]);
@@ -1107,7 +1105,7 @@ export default function StudentUpsert() {
             </Breadcrumbs>
           </Box>
           <Box className="flex items-center gap-2">
-            {isDevCreate && (
+            {isCreateMode && (
               <Button variant="outlined" onClick={autofillDevStudent}>
                 Dev Auto Fill
               </Button>
