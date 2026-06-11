@@ -20,8 +20,9 @@ import logger from '../services/logger.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const UPLOAD_DIR = path.join(__dirname, '../../uploads/templates');
-const GENERATED_DIR = path.join(__dirname, '../../uploads/generated');
+const UPLOAD_ROOT = path.resolve(process.env.UPLOAD_ROOT || path.join(__dirname, '../../uploads'));
+const UPLOAD_DIR = path.join(UPLOAD_ROOT, 'templates');
+const GENERATED_DIR = path.join(UPLOAD_ROOT, 'generated');
 
 const PAGE_PRESETS = {
     A4: { widthMm: 210, heightMm: 297 },

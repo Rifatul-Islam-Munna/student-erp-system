@@ -3,6 +3,7 @@ FROM node:22-bookworm-slim
 WORKDIR /app
 
 ENV NODE_ENV=production \
+    UPLOAD_ROOT=/app/uploads \
     PUPPETEER_SKIP_DOWNLOAD=true \
     PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
@@ -27,6 +28,8 @@ COPY src ./src
 COPY public ./public
 
 RUN mkdir -p /app/public /app/uploads/templates /app/uploads/generated && chown -R node:node /app
+
+VOLUME ["/app/uploads"]
 
 USER node
 
