@@ -100,6 +100,18 @@ const getMimeTypeForTemplateSource = (template = {}) => {
     return 'application/octet-stream';
 };
 
+const resolveTemplateSourcePath = (template = {}) => {
+    const candidates = [
+        template.originalFilePath,
+        template.originalFilePath ? path.join(UPLOAD_DIR, path.basename(template.originalFilePath)) : '',
+        template.originalFileName ? path.join(UPLOAD_DIR, template.originalFileName) : ''
+    ]
+        .filter(Boolean)
+        .map((value) => path.normalize(String(value)));
+
+    return candidates.find((candidate) => fs.existsSync(candidate)) || '';
+};
+
 const formatDateValue = (value) => {
     if (!value) return '';
     const date = new Date(value);
@@ -758,8 +770,9 @@ export const uploadTemplateFile = async (request, reply) => {
             writeStream.on('error', reject);
         });
 
-        if (template.originalFilePath && fs.existsSync(template.originalFilePath)) {
-            fs.unlinkSync(template.originalFilePath);
+        const existingSourcePath = resolveTemplateSourcePath(template);
+        if (existingSourcePath) {
+            fs.unlinkSync(existingSourcePath);
         }
 
         template.originalFilePath = filePath;
@@ -809,13 +822,15 @@ export const downloadTemplateSource = async (request, reply) => {
     try {
         const template = await DocumentTemplate.findById(request.params.id).lean();
         if (!template) return reply.code(404).send({ success: false, message: 'Template not found.' });
-        if (!template.originalFilePath || !fs.existsSync(template.originalFilePath)) {
+        const sourceFilePath = resolveTemplateSourcePath(template);
+
+        if (!sourceFilePath) {
             return reply.code(404).send({ success: false, message: 'Source file not found.' });
         }
 
         reply.header('Content-Type', getMimeTypeForTemplateSource(template));
-        reply.header('Content-Disposition', `attachment; filename="${template.originalFileName || path.basename(template.originalFilePath)}"`);
-        return reply.send(fs.createReadStream(template.originalFilePath));
+        reply.header('Content-Disposition', `attachment; filename="${template.originalFileName || path.basename(sourceFilePath)}"`);
+        return reply.send(fs.createReadStream(sourceFilePath));
     } catch (error) {
         logger.error(error);
         return reply.code(500).send({ success: false, message: 'Failed to download source file.' });
@@ -841,7 +856,8 @@ export const generateDocument = async (request, reply) => {
             });
         }
         if (template.documentFormat === 'xlsx') {
-            if (!template.originalFilePath || !fs.existsSync(template.originalFilePath)) {
+            const sourceFilePath = resolveTemplateSourcePath(template);
+            if (!sourceFilePath) {
                 return reply.code(404).send({ success: false, message: 'XLSX source file not found.' });
             }
             if (template.docType === 'student' && !student) {
@@ -853,7 +869,7 @@ export const generateDocument = async (request, reply) => {
                 ...(student ? buildStudentVariableMap(student) : {})
             };
 
-            const templateVariables = await extractDocxVariables(template.originalFilePath);
+            const templateVariables = await extractDocxVariables(sourceFilePath);
             const missingVariables = findMissingVariables({ ...template, shortcodes: templateVariables }, variableMap);
             if (missingVariables.length > 0) {
                 return reply.code(400).send({
@@ -867,7 +883,7 @@ export const generateDocument = async (request, reply) => {
             }
 
             const workbook = new ExcelJS.Workbook();
-            await workbook.xlsx.readFile(template.originalFilePath);
+            await workbook.xlsx.readFile(sourceFilePath);
 
             workbook.eachSheet((worksheet) => {
                 worksheet.eachRow((row) => {
@@ -904,7 +920,8 @@ export const generateDocument = async (request, reply) => {
             return reply.send(buffer);
         }
         if (template.documentFormat === 'fillable_pdf') {
-            if (!template.originalFilePath || !fs.existsSync(template.originalFilePath)) {
+            const sourceFilePath = resolveTemplateSourcePath(template);
+            if (!sourceFilePath) {
                 return reply.code(404).send({ success: false, message: 'Fillable PDF source file not found.' });
             }
             if (template.docType === 'student' && !student) {
@@ -928,7 +945,7 @@ export const generateDocument = async (request, reply) => {
                 });
             }
 
-            const pdfBytes = fs.readFileSync(template.originalFilePath);
+            const pdfBytes = fs.readFileSync(sourceFilePath);
             const pdfDoc = await PDFDocument.load(pdfBytes);
             const form = pdfDoc.getForm();
 
@@ -942,7 +959,8 @@ export const generateDocument = async (request, reply) => {
             return reply.send(buffer);
         }
         if (template.documentFormat === 'docx') {
-            if (!template.originalFilePath || !fs.existsSync(template.originalFilePath)) {
+            const sourceFilePath = resolveTemplateSourcePath(template);
+            if (!sourceFilePath) {
                 return reply.code(404).send({ success: false, message: 'DOCX source file not found.' });
             }
             if (template.docType === 'student' && !student) {
@@ -967,7 +985,7 @@ export const generateDocument = async (request, reply) => {
             }
 
             const docxData = toDocxDataMap(variableMap);
-            const content = fs.readFileSync(template.originalFilePath, 'binary');
+            const content = fs.readFileSync(sourceFilePath, 'binary');
             const zip = new PizZip(content);
             const doc = new Docxtemplater(zip, {
                 delimiters: { start: '{{', end: '}}' },

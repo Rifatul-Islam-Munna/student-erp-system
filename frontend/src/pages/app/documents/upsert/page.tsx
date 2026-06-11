@@ -599,6 +599,7 @@ export default function DocumentUpsert() {
   const [pdfSourceBlob, setPdfSourceBlob] = useState<Blob | null>(null);
   const [xlsxPreview, setXlsxPreview] = useState<XlsxPreviewSheet | null>(null);
   const [sourcePreviewLoading, setSourcePreviewLoading] = useState(false);
+  const [sourceLoadError, setSourceLoadError] = useState<string | null>(null);
   const [aiItems, setAiItems] = useState<AiTemplateItem[]>([]);
   const [selectedAiItemId, setSelectedAiItemId] = useState<string | null>(null);
   const [pdfCanvasZoom, setPdfCanvasZoom] = useState(1);
@@ -980,6 +981,7 @@ export default function DocumentUpsert() {
 
     const fetchDocument = async () => {
       setLoading(true);
+      setSourceLoadError(null);
       try {
         const response = await DocumentService.getDocumentById(id);
         if (response.success && response.data) {
@@ -1007,6 +1009,7 @@ export default function DocumentUpsert() {
                 setXlsxPreview(null);
               } catch (sourceError) {
                 console.error("Failed to load PDF source", sourceError);
+                setSourceLoadError(sourceError instanceof Error ? sourceError.message : "Failed to load source file");
               } finally {
                 setSourcePreviewLoading(false);
               }
@@ -1022,6 +1025,7 @@ export default function DocumentUpsert() {
                 setXlsxPreview(preview);
               } catch (sourceError) {
                 console.error("Failed to load XLSX source", sourceError);
+                setSourceLoadError(sourceError instanceof Error ? sourceError.message : "Failed to load source file");
               } finally {
                 setSourcePreviewLoading(false);
               }
@@ -1036,6 +1040,7 @@ export default function DocumentUpsert() {
                 setPdfSourceBlob(sourceBlob);
               } catch (sourceError) {
                 console.error("Failed to load fillable PDF source", sourceError);
+                setSourceLoadError(sourceError instanceof Error ? sourceError.message : "Failed to load source file");
               } finally {
                 setSourcePreviewLoading(false);
               }
@@ -1701,6 +1706,7 @@ export default function DocumentUpsert() {
   const handleSourceFileSelect = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    setSourceLoadError(null);
     setPendingSourceFile(file);
     const extension = file.name.split(".").pop()?.toLowerCase() || "";
     formik.setFieldValue("fileType", extension);
@@ -1940,6 +1946,7 @@ export default function DocumentUpsert() {
                   <Alert severity="info">
                     {t("Upload your PDF file, preview first page here, add variables or custom text, drag them where you want, then style font, size, color, and background.")}
                   </Alert>
+                  {sourceLoadError && <Alert severity="warning">{t(sourceLoadError === "Source file not found." ? "Saved source file is missing on server. Please upload the PDF again and save." : sourceLoadError)}</Alert>}
                   <Card variant="outlined">
                     <CardContent>
                       <Box className="space-y-4">
@@ -2218,6 +2225,7 @@ export default function DocumentUpsert() {
                   <Alert severity="info">
                     {t("Use an XLSX template that already contains variables like {{student_name}} in cells. Upload it here, preview first sheet, then student download keeps the file as XLSX with replaced values.")}
                   </Alert>
+                  {sourceLoadError && <Alert severity="warning">{t(sourceLoadError === "Source file not found." ? "Saved source file is missing on server. Please upload the XLSX again and save." : sourceLoadError)}</Alert>}
                   <Card variant="outlined">
                     <CardContent className="space-y-4">
                       <Box className="flex flex-wrap items-center gap-2">
@@ -2269,6 +2277,7 @@ export default function DocumentUpsert() {
                   <Alert severity="info">
                     {t("Use a fillable PDF that already contains named form fields like {{name_en}}. Upload it here. We will read field names as variables and generate a filled PDF for student documents.")}
                   </Alert>
+                  {sourceLoadError && <Alert severity="warning">{t(sourceLoadError === "Source file not found." ? "Saved source file is missing on server. Please upload the fillable PDF again and save." : sourceLoadError)}</Alert>}
                   <Card variant="outlined">
                     <CardContent className="space-y-4">
                       <Box className="flex flex-wrap items-center gap-2">
@@ -2319,6 +2328,7 @@ export default function DocumentUpsert() {
                   <Alert severity="info">
                     {t("Use a DOCX Word template that already contains variables like {{name_en}}. Upload it here. We will replace those variables and generate a DOCX download for student documents.")}
                   </Alert>
+                  {sourceLoadError && <Alert severity="warning">{t(sourceLoadError === "Source file not found." ? "Saved source file is missing on server. Please upload the DOCX again and save." : sourceLoadError)}</Alert>}
                   <Card variant="outlined">
                     <CardContent className="space-y-4">
                       <Box className="flex flex-wrap items-center gap-2">

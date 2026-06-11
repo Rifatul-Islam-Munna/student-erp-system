@@ -13,7 +13,9 @@ export const DocumentService = {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || "Failed to download source file");
+      const error = new Error(errorData.message || "Failed to download source file") as Error & { status?: number };
+      error.status = response.status;
+      throw error;
     }
 
     return response.blob();
