@@ -1,12 +1,8 @@
-import { GlobalWorkerOptions, getDocument } from "pdfjs-dist";
-import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-
 import { AiTemplateItem } from "@/types/aiTemplate";
 import { SettingDocument } from "@/types/setting";
 import { Student } from "@/types/student";
 import { DocumentCustomFont } from "@/types/document";
-
-GlobalWorkerOptions.workerSrc = pdfWorker;
+import { getPdfFirstPagePreview } from "@/utils/pdf-preview";
 
 const escapeHtml = (value = "") =>
   String(value)
@@ -16,20 +12,7 @@ const escapeHtml = (value = "") =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 
-export const renderPdfSourcePreview = async (sourceBlob: Blob) => {
-  const bytes = new Uint8Array(await sourceBlob.arrayBuffer());
-  const pdf = await getDocument({ data: bytes }).promise;
-  const page = await pdf.getPage(1);
-  const viewport = page.getViewport({ scale: 1.8 });
-  const canvas = document.createElement("canvas");
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("Canvas context unavailable");
-
-  canvas.width = Math.ceil(viewport.width);
-  canvas.height = Math.ceil(viewport.height);
-  await page.render({ canvasContext: context, viewport }).promise;
-  return canvas.toDataURL("image/png");
-};
+export const renderPdfSourcePreview = async (sourceBlob: Blob) => getPdfFirstPagePreview(sourceBlob, 1.8);
 
 export const buildPdfVariableMap = (student?: Student | null, settings?: SettingDocument | null) => ({
   "{{sys_agency_name}}": settings?.site?.name || "",

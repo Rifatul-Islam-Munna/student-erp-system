@@ -91,6 +91,15 @@ const escapeHtml = (value = '') =>
 
 const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+const getMimeTypeForTemplateSource = (template = {}) => {
+    const ext = String(path.extname(template.originalFileName || template.originalFilePath || '')).toLowerCase();
+
+    if (ext === '.pdf') return 'application/pdf';
+    if (ext === '.xlsx') return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    if (ext === '.docx') return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    return 'application/octet-stream';
+};
+
 const formatDateValue = (value) => {
     if (!value) return '';
     const date = new Date(value);
@@ -804,7 +813,7 @@ export const downloadTemplateSource = async (request, reply) => {
             return reply.code(404).send({ success: false, message: 'Source file not found.' });
         }
 
-        reply.header('Content-Type', 'application/octet-stream');
+        reply.header('Content-Type', getMimeTypeForTemplateSource(template));
         reply.header('Content-Disposition', `attachment; filename="${template.originalFileName || path.basename(template.originalFilePath)}"`);
         return reply.send(fs.createReadStream(template.originalFilePath));
     } catch (error) {

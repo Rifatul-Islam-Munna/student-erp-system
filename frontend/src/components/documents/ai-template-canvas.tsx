@@ -1,11 +1,8 @@
 import { MouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Box, Typography } from "@mui/material";
-import { GlobalWorkerOptions, getDocument } from "pdfjs-dist";
-import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 import { AiTemplateItem } from "@/types/aiTemplate";
-
-GlobalWorkerOptions.workerSrc = pdfWorker;
+import { getPdfFirstPagePreview } from "@/utils/pdf-preview";
 
 type Props = {
   editable?: boolean;
@@ -84,25 +81,13 @@ export default function AiTemplateCanvas({
       }
 
       try {
-        const bytes = new Uint8Array(await sourceBlob.arrayBuffer());
-        const loadingTask = getDocument({ data: bytes });
-        const pdf = await loadingTask.promise;
-        const page = await pdf.getPage(1);
-        const viewport = page.getViewport({ scale: 1.9 });
-        const canvas = document.createElement("canvas");
-        const context = canvas.getContext("2d");
-        if (!context) throw new Error("Canvas context unavailable");
-
-        canvas.width = Math.ceil(viewport.width);
-        canvas.height = Math.ceil(viewport.height);
-
-        await page.render({ canvasContext: context, viewport }).promise;
         if (!active) return;
 
-        setPreviewUrl(canvas.toDataURL("image/png"));
+        setPreviewUrl(await getPdfFirstPagePreview(sourceBlob));
         setPreviewError("");
-      } catch {
+      } catch (error) {
         if (!active) return;
+        console.error("Failed to render PDF preview.", error);
         setPreviewUrl(null);
         setPreviewError("Preview unavailable for this PDF source file.");
       }
