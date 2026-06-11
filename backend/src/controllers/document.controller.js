@@ -17,6 +17,15 @@ import Student from '../models/Student.js';
 import Setting from '../models/Setting.js';
 import { getStudentVariableList } from '../utils/studentVariableMap.js';
 import logger from '../services/logger.service.js';
+import {
+    deleteMinioObject,
+    extractMinioKeyFromUrl,
+    getMinioObjectBuffer,
+    getMinioObjectStream,
+    isMinioConfigured,
+    isMinioEnabled,
+    uploadBufferToMinio
+} from '../services/minio.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -113,6 +122,69 @@ const resolveTemplateSourcePath = (template = {}) => {
     return candidates.find((candidate) => fs.existsSync(candidate)) || '';
 };
 
+const resolveTemplateSourceKey = (template = {}) =>
+    String(template.originalFileKey || extractMinioKeyFromUrl(template.originalFilePath) || '').trim();
+
+const readSourceToBuffer = (source) => {
+    if (Buffer.isBuffer(source)) return source;
+    return fs.readFileSync(source);
+};
+
+const deleteLegacyLocalTemplateSource = (template = {}) => {
+    const sourceFilePath = resolveTemplateSourcePath(template);
+    if (!sourceFilePath) return;
+
+    try {
+        fs.unlinkSync(sourceFilePath);
+    } catch (error) {
+        logger.warn({ err: error, path: sourceFilePath }, 'Failed to delete legacy local template source file');
+    }
+};
+
+const removeTemplateSource = async (template = {}) => {
+    const sourceKey = resolveTemplateSourceKey(template);
+    if (sourceKey && isMinioEnabled()) {
+        try {
+            await deleteMinioObject(sourceKey);
+        } catch (error) {
+            logger.warn({ err: error, sourceKey }, 'Failed to delete template source from MinIO');
+        }
+    }
+
+    deleteLegacyLocalTemplateSource(template);
+};
+
+const getTemplateSourceBuffer = async (template = {}) => {
+    const sourceKey = resolveTemplateSourceKey(template);
+    if (sourceKey && isMinioEnabled()) {
+        try {
+            const buffer = await getMinioObjectBuffer(sourceKey);
+            if (buffer) return buffer;
+        } catch (error) {
+            logger.warn({ err: error, sourceKey }, 'Failed to read template source from MinIO, trying local fallback');
+        }
+    }
+
+    const sourceFilePath = resolveTemplateSourcePath(template);
+    if (!sourceFilePath) return null;
+    return fs.readFileSync(sourceFilePath);
+};
+
+const getTemplateSourceStreamOrBuffer = async (template = {}) => {
+    const sourceKey = resolveTemplateSourceKey(template);
+    if (sourceKey && isMinioEnabled()) {
+        try {
+            const stream = await getMinioObjectStream(sourceKey);
+            if (stream) return stream;
+        } catch (error) {
+            logger.warn({ err: error, sourceKey }, 'Failed to stream template source from MinIO, trying local fallback');
+        }
+    }
+
+    const sourceFilePath = resolveTemplateSourcePath(template);
+    return sourceFilePath ? fs.createReadStream(sourceFilePath) : null;
+};
+
 const formatDateValue = (value) => {
     if (!value) return '';
     const date = new Date(value);
@@ -132,8 +204,10 @@ const getDatePart = (value, part) => {
 const extractTemplateVariables = (content = '') =>
     Array.from(new Set((String(content).match(/\{\{[^}]+\}\}/g) || []).map((item) => item.trim())));
 
-const extractWorkbookVariables = async (filePath) => {
-    const workbook = XLSX.readFile(filePath, { cellFormula: true, cellHTML: false, cellText: true });
+const extractWorkbookVariables = async (source) => {
+    const workbook = Buffer.isBuffer(source)
+        ? XLSX.read(source, { type: 'buffer', cellFormula: true, cellHTML: false, cellText: true })
+        : XLSX.readFile(source, { cellFormula: true, cellHTML: false, cellText: true });
     const found = new Set();
 
     workbook.SheetNames.forEach((sheetName) => {
@@ -156,8 +230,8 @@ const extractWorkbookVariables = async (filePath) => {
     return Array.from(found);
 };
 
-const extractFillablePdfVariables = async (filePath) => {
-    const bytes = fs.readFileSync(filePath);
+const extractFillablePdfVariables = async (source) => {
+    const bytes = readSourceToBuffer(source);
     const pdfDoc = await PDFDocument.load(bytes);
     const form = pdfDoc.getForm();
 
@@ -204,8 +278,8 @@ const collectDocxPlaceholderNames = (node, bucket = new Set()) => {
     return bucket;
 };
 
-const extractDocxVariables = async (filePath) => {
-    const content = fs.readFileSync(filePath, 'binary');
+const extractDocxVariables = async (source) => {
+    const content = readSourceToBuffer(source).toString('binary');
     const zip = new PizZip(content);
     const inspectModule = InspectModule();
     const doc = new Docxtemplater(zip, {
@@ -732,16 +806,7 @@ export const deleteTemplate = async (request, reply) => {
     try {
         const template = await DocumentTemplate.findByIdAndDelete(request.params.id);
         if (!template) return reply.code(404).send({ success: false, message: 'Template not found.' });
-
-        if (template.originalFilePath) {
-            try {
-                if (fs.existsSync(template.originalFilePath)) {
-                    fs.rmSync(template.originalFilePath, { force: true });
-                }
-            } catch (fileError) {
-                logger.warn({ err: fileError, path: template.originalFilePath }, 'Failed to remove template source file during delete');
-            }
-        }
+        await removeTemplateSource(template);
 
         return reply.send({ success: true, message: 'Template deleted successfully.' });
     } catch (error) {
@@ -761,55 +826,53 @@ export const uploadTemplateFile = async (request, reply) => {
 
         const ext = path.extname(data.filename).toLowerCase();
         const safeName = `${template._id}_${Date.now()}${ext}`;
-        const filePath = path.join(UPLOAD_DIR, safeName);
+        const fileBuffer = await data.toBuffer();
 
-        const writeStream = fs.createWriteStream(filePath);
-        await new Promise((resolve, reject) => {
-            data.file.pipe(writeStream);
-            data.file.on('error', reject);
-            writeStream.on('finish', resolve);
-            writeStream.on('error', reject);
-        });
-
-        const existingSourcePath = resolveTemplateSourcePath(template);
-        if (existingSourcePath) {
-            fs.unlinkSync(existingSourcePath);
-        }
-
-        template.originalFilePath = filePath;
-        template.originalFileName = data.filename;
-        template.fileType = ext.replace('.', '');
         if (template.documentFormat === 'xlsx' || ext === '.xlsx') {
             try {
-                template.shortcodes = await extractWorkbookVariables(filePath);
+                template.shortcodes = await extractWorkbookVariables(fileBuffer);
             } catch (xlsxError) {
-                if (fs.existsSync(filePath)) {
-                    try { fs.unlinkSync(filePath); } catch (_) { /* ignore */ }
-                }
-                logger.error({ err: xlsxError, filePath, fileName: data.filename }, 'Failed to parse uploaded XLSX template');
+                logger.error({ err: xlsxError, fileName: data.filename }, 'Failed to parse uploaded XLSX template');
                 return reply.code(400).send({ success: false, message: 'Invalid XLSX file or upload not completed correctly. Please upload a real .xlsx file.' });
             }
         } else if (template.documentFormat === 'fillable_pdf') {
             try {
-                template.shortcodes = await extractFillablePdfVariables(filePath);
+                template.shortcodes = await extractFillablePdfVariables(fileBuffer);
             } catch (pdfError) {
-                if (fs.existsSync(filePath)) {
-                    try { fs.unlinkSync(filePath); } catch (_) { /* ignore */ }
-                }
-                logger.error({ err: pdfError, filePath, fileName: data.filename }, 'Failed to parse uploaded fillable PDF template');
+                logger.error({ err: pdfError, fileName: data.filename }, 'Failed to parse uploaded fillable PDF template');
                 return reply.code(400).send({ success: false, message: 'Invalid fillable PDF file. Please upload a real fillable PDF with named form fields.' });
             }
         } else if (template.documentFormat === 'docx') {
             try {
-                template.shortcodes = await extractDocxVariables(filePath);
+                template.shortcodes = await extractDocxVariables(fileBuffer);
             } catch (docxError) {
-                if (fs.existsSync(filePath)) {
-                    try { fs.unlinkSync(filePath); } catch (_) { /* ignore */ }
-                }
-                logger.error({ err: docxError, filePath, fileName: data.filename }, 'Failed to parse uploaded DOCX template');
+                logger.error({ err: docxError, fileName: data.filename }, 'Failed to parse uploaded DOCX template');
                 return reply.code(400).send({ success: false, message: 'Invalid DOCX file. Please upload a real Word .docx template with variables like {{name_en}}.' });
             }
         }
+
+        await removeTemplateSource(template);
+
+        if (isMinioConfigured()) {
+            logger.info({ fileName: data.filename, key: `document-templates/${safeName}` }, 'Uploading document source to MinIO');
+            const uploaded = await uploadBufferToMinio({
+                buffer: fileBuffer,
+                contentType: data.mimetype,
+                key: `document-templates/${safeName}`
+            });
+            logger.info({ fileName: data.filename, key: uploaded.key, url: uploaded.url }, 'Uploaded document source to MinIO');
+            template.originalFileKey = uploaded.key;
+            template.originalFilePath = uploaded.url;
+        } else {
+            const filePath = path.join(UPLOAD_DIR, safeName);
+            fs.writeFileSync(filePath, fileBuffer);
+            logger.warn({ fileName: data.filename, filePath }, 'MinIO not configured. Stored document source locally');
+            template.originalFileKey = '';
+            template.originalFilePath = filePath;
+        }
+
+        template.originalFileName = data.filename;
+        template.fileType = ext.replace('.', '');
         await template.save();
 
         return reply.send({ success: true, message: 'File uploaded successfully.', data: serializeTemplate(template) });
@@ -823,15 +886,14 @@ export const downloadTemplateSource = async (request, reply) => {
     try {
         const template = await DocumentTemplate.findById(request.params.id).lean();
         if (!template) return reply.code(404).send({ success: false, message: 'Template not found.' });
-        const sourceFilePath = resolveTemplateSourcePath(template);
-
-        if (!sourceFilePath) {
+        const sourceStream = await getTemplateSourceStreamOrBuffer(template);
+        if (!sourceStream) {
             return reply.code(404).send({ success: false, message: 'Source file not found.' });
         }
 
         reply.header('Content-Type', getMimeTypeForTemplateSource(template));
-        reply.header('Content-Disposition', `attachment; filename="${template.originalFileName || path.basename(sourceFilePath)}"`);
-        return reply.send(fs.createReadStream(sourceFilePath));
+        reply.header('Content-Disposition', `attachment; filename="${template.originalFileName || 'template-source'}"`);
+        return reply.send(sourceStream);
     } catch (error) {
         logger.error(error);
         return reply.code(500).send({ success: false, message: 'Failed to download source file.' });
@@ -857,8 +919,8 @@ export const generateDocument = async (request, reply) => {
             });
         }
         if (template.documentFormat === 'xlsx') {
-            const sourceFilePath = resolveTemplateSourcePath(template);
-            if (!sourceFilePath) {
+            const sourceBuffer = await getTemplateSourceBuffer(template);
+            if (!sourceBuffer) {
                 return reply.code(404).send({ success: false, message: 'XLSX source file not found.' });
             }
             if (template.docType === 'student' && !student) {
@@ -870,7 +932,7 @@ export const generateDocument = async (request, reply) => {
                 ...(student ? buildStudentVariableMap(student) : {})
             };
 
-            const templateVariables = await extractDocxVariables(sourceFilePath);
+            const templateVariables = await extractWorkbookVariables(sourceBuffer);
             const missingVariables = findMissingVariables({ ...template, shortcodes: templateVariables }, variableMap);
             if (missingVariables.length > 0) {
                 return reply.code(400).send({
@@ -884,7 +946,7 @@ export const generateDocument = async (request, reply) => {
             }
 
             const workbook = new ExcelJS.Workbook();
-            await workbook.xlsx.readFile(sourceFilePath);
+            await workbook.xlsx.load(sourceBuffer);
 
             workbook.eachSheet((worksheet) => {
                 worksheet.eachRow((row) => {
@@ -921,8 +983,8 @@ export const generateDocument = async (request, reply) => {
             return reply.send(buffer);
         }
         if (template.documentFormat === 'fillable_pdf') {
-            const sourceFilePath = resolveTemplateSourcePath(template);
-            if (!sourceFilePath) {
+            const sourceBuffer = await getTemplateSourceBuffer(template);
+            if (!sourceBuffer) {
                 return reply.code(404).send({ success: false, message: 'Fillable PDF source file not found.' });
             }
             if (template.docType === 'student' && !student) {
@@ -946,8 +1008,7 @@ export const generateDocument = async (request, reply) => {
                 });
             }
 
-            const pdfBytes = fs.readFileSync(sourceFilePath);
-            const pdfDoc = await PDFDocument.load(pdfBytes);
+            const pdfDoc = await PDFDocument.load(sourceBuffer);
             const form = pdfDoc.getForm();
 
             fillPdfFormFields(form, variableMap);
@@ -960,8 +1021,8 @@ export const generateDocument = async (request, reply) => {
             return reply.send(buffer);
         }
         if (template.documentFormat === 'docx') {
-            const sourceFilePath = resolveTemplateSourcePath(template);
-            if (!sourceFilePath) {
+            const sourceBuffer = await getTemplateSourceBuffer(template);
+            if (!sourceBuffer) {
                 return reply.code(404).send({ success: false, message: 'DOCX source file not found.' });
             }
             if (template.docType === 'student' && !student) {
@@ -986,7 +1047,7 @@ export const generateDocument = async (request, reply) => {
             }
 
             const docxData = toDocxDataMap(variableMap);
-            const content = fs.readFileSync(sourceFilePath, 'binary');
+            const content = sourceBuffer.toString('binary');
             const zip = new PizZip(content);
             const doc = new Docxtemplater(zip, {
                 delimiters: { start: '{{', end: '}}' },

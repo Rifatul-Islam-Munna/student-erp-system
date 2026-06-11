@@ -27,6 +27,10 @@ const documentTemplateSchema = new mongoose.Schema({
         type: String,
         trim: true
     },
+    originalFileKey: {
+        type: String,
+        trim: true
+    },
     originalFileName: {
         type: String,
         trim: true

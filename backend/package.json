@@ -48,7 +48,8 @@
     "puppeteer": "^25.1.0",
     "request-ip": "^3.3.0",
     "stringify": "^5.2.0",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "@aws-sdk/client-s3": "^3.887.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.11"

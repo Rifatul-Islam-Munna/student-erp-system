@@ -8,6 +8,7 @@ export const documentTemplateResponseSchema = {
         status: { type: 'string' },
         fileType: { type: 'string' },
         originalFilePath: { type: 'string' },
+        originalFileKey: { type: 'string' },
         originalFileName: { type: 'string' },
         templateContent: { type: 'string' },
         shortcodes: { type: 'array', items: { type: 'string' } },

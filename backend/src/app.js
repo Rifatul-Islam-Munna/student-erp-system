@@ -7,6 +7,7 @@ import autoload from '@fastify/autoload';
 import connectDB from './config/db.js';
 import { swaggerConfig, swaggerUiConfig } from './config/swagger.js';
 import logger from './services/logger.service.js';
+import { initMinioService } from './services/minio.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -215,6 +216,7 @@ const start = async () => {
 
         const { initGlobalCache } = await import('./services/cache.service.js');
         await initGlobalCache();
+        await initMinioService();
 
         await fastify.ready();
 

@@ -1,7 +1,7 @@
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
-import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import PdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?worker";
 
-GlobalWorkerOptions.workerSrc = pdfWorker;
+GlobalWorkerOptions.workerPort = new PdfWorker();
 
 const loadPdf = async (data: Uint8Array, disableWorker = false) =>
   getDocument({
