@@ -48,7 +48,7 @@ export const parseAiTemplateLayout = (value?: string | null): AiTemplateLayout =
         value: item?.value || "",
         x: Number.isFinite(Number(item?.x)) ? Number(item?.x) : 10,
         y: Number.isFinite(Number(item?.y)) ? Number(item?.y) : 10,
-        width: Math.max(8, Math.min(100, Number(item?.width) || 24)),
+        width: Math.max(0.5, Math.min(100, Number(item?.width) || 24)),
         fontFamily: item?.fontFamily || "Arial",
         fontSize: Math.max(8, Number(item?.fontSize) || 20),
         color: item?.color || "#111827",

@@ -635,7 +635,7 @@ export default function DocumentUpsert() {
   const [pdfShowGrid, setPdfShowGrid] = useState(true);
   const [pdfShowGuides, setPdfShowGuides] = useState(true);
   const [pdfShowRulers, setPdfShowRulers] = useState(true);
-  const [pdfSnapToGrid, setPdfSnapToGrid] = useState(true);
+  const [pdfSnapToGrid, setPdfSnapToGrid] = useState(false);
   const [canvasZoom, setCanvasZoom] = useState(1);
   const [fitZoom, setFitZoom] = useState(1);
   const quillRef = useRef<ReactQuill | null>(null);
@@ -2141,8 +2141,19 @@ export default function DocumentUpsert() {
                                         label={t("Width %")}
                                         value={selectedPdfItem.width}
                                         fallbackValue={24}
-                                        normalize={(value) => Math.max(8, Math.min(100, value))}
+                                        normalize={(value) => Math.max(0.5, Math.min(100, value))}
                                         onCommit={(value) => updateSelectedPdfItem({ width: value })}
+                                      />
+                                    </Grid>
+                                    <Grid size={12}>
+                                      <Slider
+                                        size="small"
+                                        value={selectedPdfItem.width}
+                                        min={0.5}
+                                        max={100}
+                                        step={0.5}
+                                        valueLabelDisplay="auto"
+                                        onChange={(_event, value) => updateSelectedPdfItem({ width: Array.isArray(value) ? value[0] : value })}
                                       />
                                     </Grid>
                                   </Grid>

@@ -56,6 +56,7 @@ export default function AiTemplateCanvas({
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ id: string; dx: number; dy: number } | null>(null);
   const dragPreviewRef = useRef<{ el: HTMLDivElement; startX: number; startY: number } | null>(null);
+  const resizeRef = useRef<{ id: string; startClientX: number; startWidth: number; currentWidth: number; startX: number; el: HTMLDivElement } | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState("");
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
@@ -117,12 +118,20 @@ export default function AiTemplateCanvas({
     let rafId = 0;
 
     const handleMove = (event: globalThis.MouseEvent) => {
-      if (!dragRef.current || !surfaceRef.current) return;
+      if ((!dragRef.current && !resizeRef.current) || !surfaceRef.current) return;
 
       cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
-        if (!dragRef.current || !surfaceRef.current) return;
+        if (!surfaceRef.current) return;
         const rect = surfaceRef.current.getBoundingClientRect();
+        if (resizeRef.current) {
+          const deltaWidth = ((event.clientX - resizeRef.current.startClientX) / rect.width) * 100;
+          const nextWidth = snap(clamp(resizeRef.current.startWidth + deltaWidth, 0.5, 100 - resizeRef.current.startX), snapToGrid);
+          resizeRef.current.el.style.width = `${nextWidth}%`;
+          resizeRef.current.currentWidth = nextWidth;
+          return;
+        }
+        if (!dragRef.current) return;
         const nextX = snap(clamp(((event.clientX - rect.left - dragRef.current.dx) / rect.width) * 100, 0, 96), snapToGrid);
         const nextY = snap(clamp(((event.clientY - rect.top - dragRef.current.dy) / rect.height) * 100, 0, 98), snapToGrid);
 
@@ -138,6 +147,11 @@ export default function AiTemplateCanvas({
 
     const handleUp = () => {
       cancelAnimationFrame(rafId);
+      if (resizeRef.current && onItemsChange) {
+        const resizeId = resizeRef.current.id;
+        const finalWidth = resizeRef.current.currentWidth;
+        onItemsChange(items.map((item) => (item.id === resizeId ? { ...item, width: finalWidth } : item)));
+      }
       // Commit the final position to React state on mouseup only
       if (dragRef.current && dragPreviewRef.current && onItemsChange) {
         const finalX = dragPreviewRef.current.startX;
@@ -147,6 +161,7 @@ export default function AiTemplateCanvas({
       }
       dragRef.current = null;
       dragPreviewRef.current = null;
+      resizeRef.current = null;
     };
 
     window.addEventListener("mousemove", handleMove);
@@ -174,6 +189,22 @@ export default function AiTemplateCanvas({
     setEditingItemId(null);
     onItemSelect?.(item.id);
     event.preventDefault();
+  };
+
+  const handleResizeMouseDown = (event: MouseEvent<HTMLDivElement>, item: AiTemplateItem) => {
+    if (!editable || item.locked || !surfaceRef.current) return;
+    event.stopPropagation();
+    event.preventDefault();
+    resizeRef.current = {
+      id: item.id,
+      startClientX: event.clientX,
+      startWidth: item.width,
+      currentWidth: item.width,
+      startX: item.x,
+      el: event.currentTarget.parentElement as HTMLDivElement,
+    };
+    setEditingItemId(null);
+    onItemSelect?.(item.id);
   };
 
   const selectedItem = items.find((item) => item.id === selectedItemId) || null;
@@ -287,6 +318,7 @@ export default function AiTemplateCanvas({
                 left: `${item.x}%`,
                 top: `${item.y}%`,
                 width: `${item.width}%`,
+                minWidth: 3,
                 px: 1.25,
                 py: 0.5,
                 borderRadius: "10px",
@@ -301,10 +333,12 @@ export default function AiTemplateCanvas({
                 letterSpacing: `${item.letterSpacing}px`,
                 textAlign: item.textAlign,
                 cursor: editable ? (item.locked ? "not-allowed" : "move") : "default",
-                transition: dragRef.current?.id === item.id ? 'none' : 'left 0.15s ease, top 0.15s ease',
-                willChange: 'left, top',
+                transition: "none",
+                willChange: "left, top, width",
                 userSelect: item.locked ? "none" : "text",
-                whiteSpace: "pre-wrap",
+                whiteSpace: editingItemId === item.id ? "pre-wrap" : "nowrap",
+                overflow: editingItemId === item.id ? "visible" : "hidden",
+                textOverflow: "ellipsis",
                 boxShadow: selectedItemId === item.id ? "0 8px 24px rgba(37, 99, 235, 0.18)" : "none",
               }}
             >
@@ -334,6 +368,22 @@ export default function AiTemplateCanvas({
                 />
               ) : (
                 item.value
+              )}
+              {editable && selectedItemId === item.id && !item.locked && editingItemId !== item.id && (
+                <Box
+                  onMouseDown={(event) => handleResizeMouseDown(event, item)}
+                  sx={{
+                    position: "absolute",
+                    top: -3,
+                    right: -5,
+                    bottom: -3,
+                    width: 10,
+                    cursor: "ew-resize",
+                    bgcolor: "primary.main",
+                    borderRadius: "999px",
+                    opacity: 0.85,
+                  }}
+                />
               )}
             </Box>
           ))}
