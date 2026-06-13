@@ -301,24 +301,45 @@ const extractDocxVariables = async (source) => {
         .map((tag) => `{{${tag}}}`);
 };
 
+const getPageCssValue = (value, unit = 'mm') => `${value}${unit}`;
+const pageSizeToMm = (value, unit = 'mm') => {
+    if (unit === 'in') return value * 25.4;
+    if (unit === 'px') return (value / 96) * 25.4;
+    return value;
+};
+const pageSizeFromMm = (valueMm, unit = 'mm') => {
+    if (unit === 'in') return valueMm / 25.4;
+    if (unit === 'px') return (valueMm / 25.4) * 96;
+    return valueMm;
+};
+const convertPageSizeUnit = (value, fromUnit = 'mm', toUnit = 'mm') =>
+    Number(pageSizeFromMm(pageSizeToMm(value, fromUnit), toUnit).toFixed(4));
+
 const normalizePageSettings = (pageSettings = {}) => {
     const preset = pageSettings.preset || 'A4';
     const orientation = pageSettings.orientation === 'landscape' ? 'landscape' : 'portrait';
+    const unit = ['mm', 'in', 'px'].includes(pageSettings.unit) ? pageSettings.unit : 'mm';
     const presetSize = PAGE_PRESETS[preset] || PAGE_PRESETS.A4;
     const baseWidth = Number(pageSettings.widthMm) || presetSize.widthMm;
     const baseHeight = Number(pageSettings.heightMm) || presetSize.heightMm;
-    const widthMm = orientation === 'landscape' ? Math.max(baseWidth, baseHeight) : Math.min(baseWidth, baseHeight);
-    const heightMm = orientation === 'landscape' ? Math.min(baseWidth, baseHeight) : Math.max(baseWidth, baseHeight);
+    const defaultMargin = convertPageSizeUnit(16, 'mm', unit);
+    const getMargin = (value) => {
+        const numericValue = Number(value);
+        return Number.isFinite(numericValue) ? numericValue : defaultMargin;
+    };
+    const widthMm = preset === 'Custom' ? baseWidth : orientation === 'landscape' ? Math.max(baseWidth, baseHeight) : Math.min(baseWidth, baseHeight);
+    const heightMm = preset === 'Custom' ? baseHeight : orientation === 'landscape' ? Math.min(baseWidth, baseHeight) : Math.max(baseWidth, baseHeight);
 
     return {
         preset,
         orientation,
+        unit: preset === 'Custom' ? unit : 'mm',
         widthMm,
         heightMm,
-        marginTopMm: Number(pageSettings.marginTopMm) || 16,
-        marginRightMm: Number(pageSettings.marginRightMm) || 16,
-        marginBottomMm: Number(pageSettings.marginBottomMm) || 16,
-        marginLeftMm: Number(pageSettings.marginLeftMm) || 16
+        marginTopMm: getMargin(pageSettings.marginTopMm),
+        marginRightMm: getMargin(pageSettings.marginRightMm),
+        marginBottomMm: getMargin(pageSettings.marginBottomMm),
+        marginLeftMm: getMargin(pageSettings.marginLeftMm)
     };
 };
 
@@ -452,8 +473,8 @@ const detectDocumentLanguage = (content = '') => {
 
 const buildPrintHtml = ({ template, content, title }) => {
     const settings = normalizePageSettings(template?.pageSettings);
-    const pageSizeCss = `${settings.widthMm}mm ${settings.heightMm}mm`;
-    const pagePaddingCss = `${settings.marginTopMm}mm ${settings.marginRightMm}mm ${settings.marginBottomMm}mm ${settings.marginLeftMm}mm`;
+    const pageSizeCss = `${getPageCssValue(settings.widthMm, settings.unit)} ${getPageCssValue(settings.heightMm, settings.unit)}`;
+    const pagePaddingCss = `${getPageCssValue(settings.marginTopMm, settings.unit)} ${getPageCssValue(settings.marginRightMm, settings.unit)} ${getPageCssValue(settings.marginBottomMm, settings.unit)} ${getPageCssValue(settings.marginLeftMm, settings.unit)}`;
     const customFontCss = buildCustomFontCss(template);
     const htmlLang = detectDocumentLanguage(content);
     const backgroundImageCss = template?.backgroundImageUrl
@@ -514,8 +535,8 @@ const buildPrintHtml = ({ template, content, title }) => {
       }
 
       .page {
-        width: ${settings.widthMm}mm;
-        min-height: ${settings.heightMm}mm;
+        width: ${getPageCssValue(settings.widthMm, settings.unit)};
+        min-height: ${getPageCssValue(settings.heightMm, settings.unit)};
         background: #ffffff;
         padding: ${pagePaddingCss};
         box-shadow: 0 24px 70px rgba(16, 24, 40, 0.16);
@@ -1122,8 +1143,8 @@ export const generateDocument = async (request, reply) => {
         });
 
         const pdfBuffer = await page.pdf({
-            width: `${settings.widthMm}mm`,
-            height: `${settings.heightMm}mm`,
+            width: getPageCssValue(settings.widthMm, settings.unit),
+            height: getPageCssValue(settings.heightMm, settings.unit),
             margin: { top: 0, right: 0, bottom: 0, left: 0 },
             printBackground: true,
             preferCSSPageSize: false

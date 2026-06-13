@@ -41,6 +41,8 @@ const getStatusColor = (status: DocumentTemplate["status"]) => {
   return "warning";
 };
 
+const pageCssValue = (value: number, unit = "mm") => `${value}${unit}`;
+
 export default function DocumentView() {
   const { t } = useTranslation();
   const { enqueueSnackbar } = useSnackbar();
@@ -99,10 +101,11 @@ export default function DocumentView() {
 
   const paperStyle = useMemo(() => {
     if (!document?.pageSettings) return {};
+    const unit = document.pageSettings.unit || "mm";
     return {
-      width: `${document.pageSettings.widthMm}mm`,
-      minHeight: `${document.pageSettings.heightMm}mm`,
-      padding: `${document.pageSettings.marginTopMm}mm ${document.pageSettings.marginRightMm}mm ${document.pageSettings.marginBottomMm}mm ${document.pageSettings.marginLeftMm}mm`,
+      width: pageCssValue(document.pageSettings.widthMm, unit),
+      minHeight: pageCssValue(document.pageSettings.heightMm, unit),
+      padding: `${pageCssValue(document.pageSettings.marginTopMm, unit)} ${pageCssValue(document.pageSettings.marginRightMm, unit)} ${pageCssValue(document.pageSettings.marginBottomMm, unit)} ${pageCssValue(document.pageSettings.marginLeftMm, unit)}`,
     };
   }, [document]);
 
@@ -170,6 +173,7 @@ export default function DocumentView() {
           items,
           pageWidthMm: document.pageSettings?.widthMm || 210,
           pageHeightMm: document.pageSettings?.heightMm || 297,
+          pageUnit: document.pageSettings?.unit || "mm",
           title: document.name,
         });
       } catch (error) {
@@ -379,6 +383,7 @@ export default function DocumentView() {
                     sourceBlob={sourceBlob}
                     pageWidthMm={document.pageSettings?.widthMm}
                     pageHeightMm={document.pageSettings?.heightMm}
+                    pageUnit={document.pageSettings?.unit}
                   />
                 )}
               </CardContent>
@@ -415,6 +420,7 @@ export default function DocumentView() {
                     sourceBlob={sourceBlob}
                     pageWidthMm={document.pageSettings?.widthMm}
                     pageHeightMm={document.pageSettings?.heightMm}
+                    pageUnit={document.pageSettings?.unit}
                   />
                 ) : (
                   <Typography variant="body2" color="text.secondary">{t("No PDF preview available.")}</Typography>

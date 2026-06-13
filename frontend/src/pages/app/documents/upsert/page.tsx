@@ -86,7 +86,7 @@ import NiTextStrikethrough from "@/icons/nexture/ni-text-strikethrough";
 import NiTextUnderline from "@/icons/nexture/ni-text-underline";
 import { DocumentService } from "@/services/documentService";
 import { AiTemplateItem, createDefaultAiTemplateLayout, parseAiTemplateLayout, serializeAiTemplateLayout } from "@/types/aiTemplate";
-import { DocumentCustomFont, DocumentFormat, DocumentPageSettings, DocumentTemplate, DocumentVariableDefinition } from "@/types/document";
+import { DocumentCustomFont, DocumentFormat, DocumentPageSettings, DocumentPageUnit, DocumentTemplate, DocumentVariableDefinition } from "@/types/document";
 import { readXlsxPreview, XlsxPreviewCell, XlsxPreviewSheet } from "@/utils/xlsx-preview";
 
 const validationSchema = yup.object({
@@ -120,6 +120,26 @@ const DOCUMENT_STATUSES = [
   { value: "active", label: "Active" },
   { value: "inactive", label: "Inactive" },
 ] as const;
+const PAGE_SIZE_UNITS: DocumentPageUnit[] = ["mm", "in", "px"];
+const MM_PER_INCH = 25.4;
+const CSS_PX_PER_INCH = 96;
+
+const toMmForUnit = (value: number, unit: DocumentPageUnit) => {
+  if (unit === "in") return value * MM_PER_INCH;
+  if (unit === "px") return (value / CSS_PX_PER_INCH) * MM_PER_INCH;
+  return value;
+};
+
+const fromMmForUnit = (valueMm: number, unit: DocumentPageUnit) => {
+  if (unit === "in") return valueMm / MM_PER_INCH;
+  if (unit === "px") return (valueMm / MM_PER_INCH) * CSS_PX_PER_INCH;
+  return valueMm;
+};
+
+const convertPageSizeUnit = (value: number, fromUnit: DocumentPageUnit, toUnit: DocumentPageUnit) =>
+  Number(fromMmForUnit(toMmForUnit(value, fromUnit), toUnit).toFixed(4));
+
+const pageCssValue = (value: number, unit: DocumentPageUnit = "mm") => `${value}${unit}`;
 
 const PAGE_PRESETS = ["A4", "A3", "Letter", "Legal", "Custom"] as const;
 const PAGE_ORIENTATIONS = ["portrait", "landscape"] as const;
@@ -148,17 +168,26 @@ const extractVariables = (content: string) =>
 const normalizePageSettings = (pageSettings?: Partial<DocumentPageSettings>): DocumentPageSettings => {
   const preset = pageSettings?.preset || DEFAULT_DOCUMENT_PAGE_SETTINGS.preset;
   const orientation = pageSettings?.orientation || DEFAULT_DOCUMENT_PAGE_SETTINGS.orientation;
+  const unit = pageSettings?.unit || DEFAULT_DOCUMENT_PAGE_SETTINGS.unit;
   const presetSize = getPageSettingsFromPreset(preset, orientation);
+  const customWidth = Number(pageSettings?.widthMm) || presetSize.widthMm;
+  const customHeight = Number(pageSettings?.heightMm) || presetSize.heightMm;
+  const defaultMargin = fromMmForUnit(DEFAULT_DOCUMENT_PAGE_SETTINGS.marginTopMm, unit);
+  const getMargin = (value?: number) => {
+    const numericValue = Number(value);
+    return Number.isFinite(numericValue) ? numericValue : defaultMargin;
+  };
 
   return {
     preset,
     orientation,
-    widthMm: Number(pageSettings?.widthMm) || presetSize.widthMm,
-    heightMm: Number(pageSettings?.heightMm) || presetSize.heightMm,
-    marginTopMm: Number(pageSettings?.marginTopMm) || DEFAULT_DOCUMENT_PAGE_SETTINGS.marginTopMm,
-    marginRightMm: Number(pageSettings?.marginRightMm) || DEFAULT_DOCUMENT_PAGE_SETTINGS.marginRightMm,
-    marginBottomMm: Number(pageSettings?.marginBottomMm) || DEFAULT_DOCUMENT_PAGE_SETTINGS.marginBottomMm,
-    marginLeftMm: Number(pageSettings?.marginLeftMm) || DEFAULT_DOCUMENT_PAGE_SETTINGS.marginLeftMm,
+    unit,
+    widthMm: preset === "Custom" ? customWidth : presetSize.widthMm,
+    heightMm: preset === "Custom" ? customHeight : presetSize.heightMm,
+    marginTopMm: getMargin(pageSettings?.marginTopMm),
+    marginRightMm: getMargin(pageSettings?.marginRightMm),
+    marginBottomMm: getMargin(pageSettings?.marginBottomMm),
+    marginLeftMm: getMargin(pageSettings?.marginLeftMm),
   };
 };
 
@@ -958,6 +987,7 @@ export default function DocumentUpsert() {
   });
 
   const pageSettings = normalizePageSettings(formik.values.pageSettings);
+  const paperSizeUnit = pageSettings.unit || "mm";
   const isPdfFormat = formik.values.documentFormat === "pdf";
   const isXlsxFormat = formik.values.documentFormat === "xlsx";
   const isFillablePdfFormat = formik.values.documentFormat === "fillable_pdf";
@@ -1244,7 +1274,7 @@ export default function DocumentUpsert() {
     updateFitZoom();
     window.addEventListener("resize", updateFitZoom);
     return () => window.removeEventListener("resize", updateFitZoom);
-  }, [isBuilderStep, pageSettings.widthMm, pageSettings.heightMm, pageSettings.marginTopMm, pageSettings.marginRightMm, pageSettings.marginBottomMm, pageSettings.marginLeftMm, formik.values.templateContent]);
+  }, [isBuilderStep, pageSettings.unit, pageSettings.widthMm, pageSettings.heightMm, pageSettings.marginTopMm, pageSettings.marginRightMm, pageSettings.marginBottomMm, pageSettings.marginLeftMm, formik.values.templateContent]);
 
   useEffect(() => {
     if (!selectedImage) return;
@@ -1366,6 +1396,7 @@ export default function DocumentUpsert() {
     formik.setFieldValue("pageSettings", {
       ...normalizePageSettings(formik.values.pageSettings),
       preset,
+      unit: preset === "Custom" ? pageSettings.unit : "mm",
       ...nextBase,
     });
   };
@@ -1391,6 +1422,26 @@ export default function DocumentUpsert() {
       ...normalizePageSettings(formik.values.pageSettings),
       preset: field === "widthMm" || field === "heightMm" ? "Custom" : pageSettings.preset,
       [field]: Number(value) || 0,
+    });
+  };
+
+  const updatePageDimensionField = (field: "widthMm" | "heightMm", value: number) => {
+    updatePageField(field, String(value));
+  };
+
+  const handlePageSizeUnitChange = (unit: DocumentPageUnit) => {
+    const currentSettings = normalizePageSettings(formik.values.pageSettings);
+    const currentUnit = currentSettings.unit || "mm";
+    formik.setFieldValue("pageSettings", {
+      ...currentSettings,
+      preset: "Custom",
+      unit,
+      widthMm: convertPageSizeUnit(currentSettings.widthMm, currentUnit, unit),
+      heightMm: convertPageSizeUnit(currentSettings.heightMm, currentUnit, unit),
+      marginTopMm: convertPageSizeUnit(currentSettings.marginTopMm, currentUnit, unit),
+      marginRightMm: convertPageSizeUnit(currentSettings.marginRightMm, currentUnit, unit),
+      marginBottomMm: convertPageSizeUnit(currentSettings.marginBottomMm, currentUnit, unit),
+      marginLeftMm: convertPageSizeUnit(currentSettings.marginLeftMm, currentUnit, unit),
     });
   };
 
@@ -2027,6 +2078,7 @@ export default function DocumentUpsert() {
                                 sourceBlob={pdfSourceBlob}
                                 pageWidthMm={pageSettings.widthMm}
                                 pageHeightMm={pageSettings.heightMm}
+                                pageUnit={paperSizeUnit}
                                 marginTopMm={pageSettings.marginTopMm}
                                 marginRightMm={pageSettings.marginRightMm}
                                 marginBottomMm={pageSettings.marginBottomMm}
@@ -2316,6 +2368,7 @@ export default function DocumentUpsert() {
                               sourceBlob={pdfSourceBlob}
                               pageWidthMm={pageSettings.widthMm}
                               pageHeightMm={pageSettings.heightMm}
+                              pageUnit={paperSizeUnit}
                             />
                           )}
                         </CardContent>
@@ -2594,8 +2647,8 @@ export default function DocumentUpsert() {
                 >
                   <Box
                     sx={{
-                      width: `calc(${pageSettings.widthMm}mm * ${currentCanvasZoom})`,
-                      height: `calc(${pageSettings.heightMm}mm * ${currentCanvasZoom})`,
+                      width: `calc(${pageCssValue(pageSettings.widthMm, paperSizeUnit)} * ${currentCanvasZoom})`,
+                      height: `calc(${pageCssValue(pageSettings.heightMm, paperSizeUnit)} * ${currentCanvasZoom})`,
                       mx: "auto",
                       position: "relative",
                     }}
@@ -2604,8 +2657,8 @@ export default function DocumentUpsert() {
                       ref={pageCanvasRef}
                       onMouseDownCapture={handleEditorMouseDownCapture}
                       sx={{
-                        width: `${pageSettings.widthMm}mm`,
-                        minHeight: `${pageSettings.heightMm}mm`,
+                        width: pageCssValue(pageSettings.widthMm, paperSizeUnit),
+                        minHeight: pageCssValue(pageSettings.heightMm, paperSizeUnit),
                         position: "absolute",
                         inset: 0,
                         transform: `scale(${currentCanvasZoom})`,
@@ -2619,7 +2672,7 @@ export default function DocumentUpsert() {
                         borderColor: "divider",
                         borderRadius: "12px",
                         boxShadow: "0 18px 45px rgba(15, 23, 42, 0.08)",
-                        p: `${pageSettings.marginTopMm}mm ${pageSettings.marginRightMm}mm ${pageSettings.marginBottomMm}mm ${pageSettings.marginLeftMm}mm`,
+                        p: `${pageCssValue(pageSettings.marginTopMm, paperSizeUnit)} ${pageCssValue(pageSettings.marginRightMm, paperSizeUnit)} ${pageCssValue(pageSettings.marginBottomMm, paperSizeUnit)} ${pageCssValue(pageSettings.marginLeftMm, paperSizeUnit)}`,
                       }}
                       onDrop={(event) => {
                         event.preventDefault();
@@ -2873,22 +2926,29 @@ export default function DocumentUpsert() {
               </Grid>
             )}
             <Grid size={{ xs: 12, md: 6 }}>
-              <ClearableNumberField fullWidth label={t("Width (mm)")} value={pageSettings.widthMm} fallbackValue={pageSettings.widthMm} normalize={(value) => Math.max(1, value)} onCommit={(value) => updatePageField("widthMm", String(value))} />
+              <TextField fullWidth select label={t("Size Unit")} value={paperSizeUnit} onChange={(event) => handlePageSizeUnitChange(event.target.value as DocumentPageUnit)}>
+                {PAGE_SIZE_UNITS.map((unit) => (
+                  <MenuItem key={unit} value={unit}>{unit}</MenuItem>
+                ))}
+              </TextField>
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <ClearableNumberField fullWidth label={t("Height (mm)")} value={pageSettings.heightMm} fallbackValue={pageSettings.heightMm} normalize={(value) => Math.max(1, value)} onCommit={(value) => updatePageField("heightMm", String(value))} />
+              <ClearableNumberField fullWidth label={t(`Width (${paperSizeUnit})`)} value={pageSettings.widthMm} fallbackValue={pageSettings.widthMm} normalize={(value) => Math.max(0.0001, value)} onCommit={(value) => updatePageDimensionField("widthMm", value)} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <ClearableNumberField fullWidth label={t("Top Margin")} value={pageSettings.marginTopMm} fallbackValue={pageSettings.marginTopMm} normalize={(value) => Math.max(0, value)} onCommit={(value) => updatePageField("marginTopMm", String(value))} />
+              <ClearableNumberField fullWidth label={t(`Height (${paperSizeUnit})`)} value={pageSettings.heightMm} fallbackValue={pageSettings.heightMm} normalize={(value) => Math.max(0.0001, value)} onCommit={(value) => updatePageDimensionField("heightMm", value)} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <ClearableNumberField fullWidth label={t("Right Margin")} value={pageSettings.marginRightMm} fallbackValue={pageSettings.marginRightMm} normalize={(value) => Math.max(0, value)} onCommit={(value) => updatePageField("marginRightMm", String(value))} />
+              <ClearableNumberField fullWidth label={t(`Top Margin (${paperSizeUnit})`)} value={pageSettings.marginTopMm} fallbackValue={pageSettings.marginTopMm} normalize={(value) => Math.max(0, value)} onCommit={(value) => updatePageField("marginTopMm", String(value))} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <ClearableNumberField fullWidth label={t("Bottom Margin")} value={pageSettings.marginBottomMm} fallbackValue={pageSettings.marginBottomMm} normalize={(value) => Math.max(0, value)} onCommit={(value) => updatePageField("marginBottomMm", String(value))} />
+              <ClearableNumberField fullWidth label={t(`Right Margin (${paperSizeUnit})`)} value={pageSettings.marginRightMm} fallbackValue={pageSettings.marginRightMm} normalize={(value) => Math.max(0, value)} onCommit={(value) => updatePageField("marginRightMm", String(value))} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <ClearableNumberField fullWidth label={t("Left Margin")} value={pageSettings.marginLeftMm} fallbackValue={pageSettings.marginLeftMm} normalize={(value) => Math.max(0, value)} onCommit={(value) => updatePageField("marginLeftMm", String(value))} />
+              <ClearableNumberField fullWidth label={t(`Bottom Margin (${paperSizeUnit})`)} value={pageSettings.marginBottomMm} fallbackValue={pageSettings.marginBottomMm} normalize={(value) => Math.max(0, value)} onCommit={(value) => updatePageField("marginBottomMm", String(value))} />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <ClearableNumberField fullWidth label={t(`Left Margin (${paperSizeUnit})`)} value={pageSettings.marginLeftMm} fallbackValue={pageSettings.marginLeftMm} normalize={(value) => Math.max(0, value)} onCommit={(value) => updatePageField("marginLeftMm", String(value))} />
             </Grid>
           </Grid>
         </DialogContent>

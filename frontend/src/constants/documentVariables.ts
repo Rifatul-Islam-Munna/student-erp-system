@@ -20,6 +20,7 @@ export const STUDENT_DOCUMENT_VARIABLES: DocumentVariableDefinition[] = STUDENT_
 export const DEFAULT_DOCUMENT_PAGE_SETTINGS: DocumentPageSettings = {
   preset: "A4",
   orientation: "portrait",
+  unit: "mm",
   widthMm: 210,
   heightMm: 297,
   marginTopMm: 16,

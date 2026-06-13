@@ -3,10 +3,12 @@ export type DocumentStatus = "draft" | "active" | "inactive";
 export type DocumentFormat = "html" | "pdf" | "xlsx" | "fillable_pdf" | "docx";
 export type DocumentPagePreset = "A4" | "A3" | "Letter" | "Legal" | "Custom";
 export type DocumentOrientation = "portrait" | "landscape";
+export type DocumentPageUnit = "mm" | "in" | "px";
 
 export interface DocumentPageSettings {
   preset: DocumentPagePreset;
   orientation: DocumentOrientation;
+  unit: DocumentPageUnit;
   widthMm: number;
   heightMm: number;
   marginTopMm: number;

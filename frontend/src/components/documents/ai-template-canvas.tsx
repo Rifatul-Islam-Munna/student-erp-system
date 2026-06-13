@@ -9,6 +9,7 @@ type Props = {
   items: AiTemplateItem[];
   pageHeightMm?: number;
   pageWidthMm?: number;
+  pageUnit?: "mm" | "in" | "px";
   marginBottomMm?: number;
   marginLeftMm?: number;
   marginRightMm?: number;
@@ -26,12 +27,18 @@ type Props = {
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 const snap = (value: number, enabled: boolean) => (enabled ? Math.round(value * 2) / 2 : value);
+const pageSizeToMm = (value: number, unit: "mm" | "in" | "px" = "mm") => {
+  if (unit === "in") return value * 25.4;
+  if (unit === "px") return (value / 96) * 25.4;
+  return value;
+};
 
 export default function AiTemplateCanvas({
   editable = false,
   items,
   pageHeightMm = 297,
   pageWidthMm = 210,
+  pageUnit = "mm",
   marginBottomMm = 16,
   marginLeftMm = 16,
   marginRightMm = 16,
@@ -60,15 +67,19 @@ export default function AiTemplateCanvas({
   }, [pageHeightMm, pageWidthMm]);
 
   const guideBox = useMemo(() => {
-    const width = Math.max(1, pageWidthMm);
-    const height = Math.max(1, pageHeightMm);
+    const width = Math.max(1, pageSizeToMm(pageWidthMm, pageUnit));
+    const height = Math.max(1, pageSizeToMm(pageHeightMm, pageUnit));
+    const marginTop = pageSizeToMm(marginTopMm, pageUnit);
+    const marginRight = pageSizeToMm(marginRightMm, pageUnit);
+    const marginBottom = pageSizeToMm(marginBottomMm, pageUnit);
+    const marginLeft = pageSizeToMm(marginLeftMm, pageUnit);
     return {
-      left: (marginLeftMm / width) * 100,
-      top: (marginTopMm / height) * 100,
-      width: ((width - marginLeftMm - marginRightMm) / width) * 100,
-      height: ((height - marginTopMm - marginBottomMm) / height) * 100,
+      left: (marginLeft / width) * 100,
+      top: (marginTop / height) * 100,
+      width: ((width - marginLeft - marginRight) / width) * 100,
+      height: ((height - marginTop - marginBottom) / height) * 100,
     };
-  }, [marginBottomMm, marginLeftMm, marginRightMm, marginTopMm, pageHeightMm, pageWidthMm]);
+  }, [marginBottomMm, marginLeftMm, marginRightMm, marginTopMm, pageHeightMm, pageUnit, pageWidthMm]);
 
   useEffect(() => {
     let active = true;

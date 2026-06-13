@@ -30,6 +30,7 @@ export const documentTemplateResponseSchema = {
             properties: {
                 preset: { type: 'string' },
                 orientation: { type: 'string' },
+                unit: { type: 'string' },
                 widthMm: { type: 'number' },
                 heightMm: { type: 'number' },
                 marginTopMm: { type: 'number' },

@@ -21,12 +21,13 @@ export const createDocumentTemplateSchema = Joi.object({
     pageSettings: Joi.object({
         preset: Joi.string().valid('A4', 'A3', 'Letter', 'Legal', 'Custom').default('A4'),
         orientation: Joi.string().valid('portrait', 'landscape').default('portrait'),
-        widthMm: Joi.number().min(10).max(1000).optional(),
-        heightMm: Joi.number().min(10).max(1000).optional(),
-        marginTopMm: Joi.number().min(0).max(100).optional(),
-        marginRightMm: Joi.number().min(0).max(100).optional(),
-        marginBottomMm: Joi.number().min(0).max(100).optional(),
-        marginLeftMm: Joi.number().min(0).max(100).optional()
+        unit: Joi.string().valid('mm', 'in', 'px').default('mm'),
+        widthMm: Joi.number().positive().optional(),
+        heightMm: Joi.number().positive().optional(),
+        marginTopMm: Joi.number().min(0).optional(),
+        marginRightMm: Joi.number().min(0).optional(),
+        marginBottomMm: Joi.number().min(0).optional(),
+        marginLeftMm: Joi.number().min(0).optional()
     }).default()
 });
 
@@ -51,12 +52,13 @@ export const updateDocumentTemplateSchema = Joi.object({
     pageSettings: Joi.object({
         preset: Joi.string().valid('A4', 'A3', 'Letter', 'Legal', 'Custom').optional(),
         orientation: Joi.string().valid('portrait', 'landscape').optional(),
-        widthMm: Joi.number().min(10).max(1000).optional(),
-        heightMm: Joi.number().min(10).max(1000).optional(),
-        marginTopMm: Joi.number().min(0).max(100).optional(),
-        marginRightMm: Joi.number().min(0).max(100).optional(),
-        marginBottomMm: Joi.number().min(0).max(100).optional(),
-        marginLeftMm: Joi.number().min(0).max(100).optional()
+        unit: Joi.string().valid('mm', 'in', 'px').optional(),
+        widthMm: Joi.number().positive().optional(),
+        heightMm: Joi.number().positive().optional(),
+        marginTopMm: Joi.number().min(0).optional(),
+        marginRightMm: Joi.number().min(0).optional(),
+        marginBottomMm: Joi.number().min(0).optional(),
+        marginLeftMm: Joi.number().min(0).optional()
     }).optional()
 });
 

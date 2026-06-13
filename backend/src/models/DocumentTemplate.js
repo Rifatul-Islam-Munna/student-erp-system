@@ -91,6 +91,11 @@ const documentTemplateSchema = new mongoose.Schema({
             enum: ['portrait', 'landscape'],
             default: 'portrait'
         },
+        unit: {
+            type: String,
+            enum: ['mm', 'in', 'px'],
+            default: 'mm'
+        },
         widthMm: {
             type: Number,
             default: 210

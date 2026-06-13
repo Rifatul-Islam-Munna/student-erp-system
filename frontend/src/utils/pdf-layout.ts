@@ -1,7 +1,7 @@
 import { AiTemplateItem } from "@/types/aiTemplate";
 import { SettingDocument } from "@/types/setting";
 import { Student } from "@/types/student";
-import { DocumentCustomFont } from "@/types/document";
+import { DocumentCustomFont, DocumentPageUnit } from "@/types/document";
 import { getPdfFirstPagePreview } from "@/utils/pdf-preview";
 
 const escapeHtml = (value = "") =>
@@ -51,6 +51,7 @@ export const openPdfLayoutPrintWindow = ({
   customFonts = [],
   items,
   pageHeightMm,
+  pageUnit = "mm",
   pageWidthMm,
   title,
 }: {
@@ -58,6 +59,7 @@ export const openPdfLayoutPrintWindow = ({
   customFonts?: DocumentCustomFont[];
   items: AiTemplateItem[];
   pageHeightMm: number;
+  pageUnit?: DocumentPageUnit;
   pageWidthMm: number;
   title: string;
 }) => {
@@ -86,15 +88,15 @@ export const openPdfLayoutPrintWindow = ({
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;600;700&family=Noto+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
         <style>
-          @page { size: ${pageWidthMm}mm ${pageHeightMm}mm; margin: 0; }
+          @page { size: ${pageWidthMm}${pageUnit} ${pageHeightMm}${pageUnit}; margin: 0; }
           ${customFontCss}
           html, body { margin: 0; padding: 0; background: #dbe4ee; font-family: 'Noto Sans', 'Noto Sans JP', Arial, sans-serif; }
           * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           .sheet-wrap { min-height: 100vh; display: flex; justify-content: center; align-items: flex-start; padding: 24px; }
           .sheet {
             position: relative;
-            width: ${pageWidthMm}mm;
-            height: ${pageHeightMm}mm;
+            width: ${pageWidthMm}${pageUnit};
+            height: ${pageHeightMm}${pageUnit};
             background: #fff;
             box-shadow: 0 24px 70px rgba(15, 23, 42, 0.16);
             overflow: hidden;
